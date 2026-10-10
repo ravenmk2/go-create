@@ -13,13 +13,11 @@ platforms=(
   windows/amd64 windows/arm64
 )
 
-# embed scenario: ensure web/dist exists and is non-empty (the placeholder is
-# not version-controlled; see "Embedding web frontend code"); skipped when the
-# frontend has already been built, so real output is never overwritten
-if [[ -d web && ! -e web/dist/index.html ]]; then
-  mkdir -p web/dist
-  printf '<!-- placeholder: run frontend build to replace -->\n' > web/dist/index.html
-fi
+<%if .Options.embed_frontend%>
+# embed scenario: build the frontend (or write a web/dist placeholder until
+# the frontend exists); see scripts/build-web.sh
+bash scripts/build-web.sh
+<%end%>
 
 # --install: build for the current platform only and install to ~/.local/bin (CLI-style projects)
 if [[ "${1:-}" == "--install" ]]; then

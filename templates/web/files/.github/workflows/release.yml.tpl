@@ -21,6 +21,11 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+<%if .Options.embed_frontend%>
+      - name: Build web frontend
+        shell: bash
+        run: bash scripts/build-web.sh   # real frontend output goes into the embedded binary
+<%end%>
 <%if .Options.docker_image%>
       - uses: docker/setup-qemu-action@v4       # register binfmt for arm64 image builds
       - uses: docker/setup-buildx-action@v4     # prerequisite for use: buildx in dockers

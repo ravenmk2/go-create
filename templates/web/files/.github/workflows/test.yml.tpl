@@ -17,9 +17,9 @@ jobs:
         with:
           go-version-file: go.mod
 <%if .Options.embed_frontend%>
-      - name: Ensure web/dist placeholder
+      - name: Build web frontend
         shell: bash
-        run: mkdir -p web/dist && touch web/dist/index.html
+        run: bash scripts/build-web.sh
 <%end%>
       - uses: golangci/golangci-lint-action@v9
         with:
@@ -40,9 +40,9 @@ jobs:
         with:
           go-version-file: go.mod
 <%if .Options.embed_frontend%>
-      - name: Ensure web/dist placeholder
+      - name: Build web frontend
         shell: bash
-        run: mkdir -p web/dist && touch web/dist/index.html
+        run: bash scripts/build-web.sh
 <%end%>
       - run: go vet ./...
 
