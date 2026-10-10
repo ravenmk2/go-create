@@ -1,0 +1,61 @@
+name: lib
+description: Go library project (public API lives in the root package)
+delims: ecb
+
+options:
+  - key: display_name
+    type: string
+    prompt: Project title (friendly display name)
+  - key: description
+    type: string
+    prompt: One-line project description
+  - key: makefile
+    type: boolean
+    prompt: Generate Makefile
+    default: true
+  - key: ci_platforms
+    type: multichoice
+    prompt: CI test platforms
+    choices:
+      - {value: ubuntu-latest, label: Ubuntu}
+      - {value: windows-latest, label: Windows}
+      - {value: macos-latest, label: macOS}
+    default: [ubuntu-latest, windows-latest, macos-latest]
+
+files:
+  - src: go.mod.tpl
+    dest: go.mod
+    render: true
+  - src: library.go.tpl
+    dest: "{{ .Name }}.go"
+    render: true
+  - src: .gitignore
+  - src: .gitattributes
+  - src: .ignore
+  - src: .golangci.yml
+  - src: .github/workflows/test.yml.tpl
+    dest: .github/workflows/test.yml
+    render: true
+  - src: README.md.tpl
+    dest: README.md
+    render: true
+  - src: AGENTS.md.tpl
+    dest: AGENTS.md
+    render: true
+  - src: Makefile.tpl
+    dest: Makefile
+    render: true
+    when: makefile
+
+tests:
+  - name: minimal
+  - name: no-makefile
+    set: {makefile: false}
+  - name: single-platform
+    set: {ci_platforms: [ubuntu-latest]}
+  - name: full
+    set:
+      display_name: Test Project
+      description: A test library
+      makefile: true
+      ci_platforms: [ubuntu-latest, windows-latest, macos-latest]

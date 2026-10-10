@@ -1,0 +1,93 @@
+name: cli
+description: "Command-line interface (CLI) project: cmd entrypoint + internal private code, optional Cobra, multi-platform releases via goreleaser"
+
+options:
+  - key: display_name
+    type: string
+    prompt: Project title (friendly display name)
+  - key: description
+    type: string
+    prompt: One-line project description
+  - key: cli_framework
+    type: choice
+    prompt: CLI framework
+    choices:
+      - {value: cobra, label: Cobra}
+      - {value: stdlib, label: Standard library flag}
+    default: cobra
+  - key: goreleaser
+    type: boolean
+    prompt: Generate goreleaser release config (.goreleaser.yml + release.yml)
+    default: true
+  - key: makefile
+    type: boolean
+    prompt: Generate Makefile
+    default: true
+  - key: ci_platforms
+    type: multichoice
+    prompt: CI test platforms
+    choices:
+      - {value: ubuntu-latest, label: Ubuntu}
+      - {value: windows-latest, label: Windows}
+      - {value: macos-latest, label: macOS}
+    default: [ubuntu-latest, windows-latest, macos-latest]
+
+files:
+  - src: go.mod.tpl
+    render: true
+  - src: cmd/main_stdlib.go.tpl
+    dest: cmd/{{ .Name }}/main.go
+    render: true
+    when: cli_framework == "stdlib"
+  - src: cmd/main_cobra.go.tpl
+    dest: cmd/{{ .Name }}/main.go
+    render: true
+    when: cli_framework == "cobra"
+  - src: cmd/root.go.tpl
+    dest: cmd/{{ .Name }}/root.go
+    render: true
+    when: cli_framework == "cobra"
+  - src: internal/app/doc.go.tpl
+    render: true
+  - src: internal/app/app.go.tpl
+    render: true
+  - src: scripts/build.sh.tpl
+    render: true
+  - src: .goreleaser.yml.tpl
+    render: true
+    when: goreleaser
+  - src: .github/workflows/release.yml.tpl
+    render: true
+    when: goreleaser
+  - src: .github/workflows/test.yml.tpl
+    render: true
+  - src: .gitignore
+  - src: .gitattributes
+  - src: .ignore
+  - src: .golangci.yml
+  - src: README.md.tpl
+    render: true
+  - src: AGENTS.md.tpl
+    render: true
+  - src: Makefile.tpl
+    render: true
+    when: makefile
+
+tests:
+  - name: minimal
+  - name: stdlib
+    set: {cli_framework: stdlib}
+  - name: no-release
+    set: {goreleaser: false}
+  - name: no-makefile
+    set: {makefile: false}
+  - name: single-platform
+    set: {ci_platforms: [ubuntu-latest]}
+  - name: full
+    set:
+      display_name: Test CLI
+      description: A test CLI tool
+      cli_framework: cobra
+      goreleaser: true
+      makefile: true
+      ci_platforms: [ubuntu-latest, windows-latest, macos-latest]
