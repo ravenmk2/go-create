@@ -19,6 +19,7 @@ go-create                 # TUI wizard
 go-create list            # list available templates and their options
 go-create new web myapi --module github.com/ravenmk2/myapi \
   --set http_framework=chi --set sqlite=true --yes
+go-create upgrade         # self-update to the latest release (--check to only check, --yes to skip confirmation)
 ```
 
 Custom templates live under `~/.config/go-create/templates/` on all platforms; a template with the same name takes precedence over the builtin one.

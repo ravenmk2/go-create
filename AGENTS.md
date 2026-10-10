@@ -7,7 +7,7 @@ go-create：Go 项目初始化工具，按工程规范生成项目骨架，模�
 ```txt
 go-create/
 ├── cmd/go-create/   # 程序入口
-├── internal/        # 应用私有代码（template / generate / cli / wizard）
+├── internal/        # 应用私有代码（template / generate / cli / wizard / upgrade）
 ├── templates/       # 内置模板（template.yaml + files/，embed 进二进制）
 └── scripts/         # 辅助脚本
 ```

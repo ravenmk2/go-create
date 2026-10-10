@@ -31,7 +31,7 @@ func Execute(version string) {
 			return runGenerate(cmd, tmpl, p)
 		},
 	}
-	root.AddCommand(newCmd(), listCmd())
+	root.AddCommand(newCmd(), listCmd(), upgradeCmd(version))
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}

@@ -9,7 +9,8 @@ cmd/go-create/      程序入口，只做组装
 internal/
 ├── template/       模板模型：加载（embed + 用户目录）、校验、when 求值、渲染
 ├── generate/       生成编排：参数校验 → 渲染 → 写盘 → 后置动作（git init / go mod tidy）
-├── cli/            cobra 命令：root（裸运行进向导）/ new（--set 解析与校验）/ list
+├── cli/            cobra 命令：root（裸运行进向导）/ new（--set 解析与校验）/ list / upgrade
+├── upgrade/        自更新：GitHub releases 查询 → 下载（重试/停滞检测）→ SHA256 校验 → 平台自替换
 └── wizard/         交互向导：TTY 走 bubbletea 自绘 TUI（步骤指示器 + 实时摘要侧栏 + 前进/后退）；非 TTY 降级 huh accessible 模式
 templates/          内置模板（cli / web / lib），embed 进二进制
 ```
@@ -48,6 +49,15 @@ TUI 向导  ─┐
 ### 生成到非空目录
 
 目标目录允许非空（支持"先 git init / clone 空仓库再生成"的场景）：交互向导在生成前显式确认（列出目录内容，提示同名文件将被覆盖）；`--yes` 视为已确认直接生成。生成期逐文件检测覆盖并输出 warning；目标目录已含 `.git` 时跳过 `git init`（避免无意义的 reinit）。后置动作（git init / go mod tidy）失败一律降级为 warning，不阻断生成；其中 go mod tidy 依赖网络，内置 3 次线性退避重试以吸收代理/仓库的瞬时故障。
+
+### 自更新（upgrade）
+
+`go-create upgrade` 从 GitHub releases 自更新，纯标准库实现（不引 go-update 类框架）：
+
+- **Resolve/Apply 分离**：先只拉 release 元数据做决策（dev 永远可升级、版本相等幂等、不主动降级、显式 `--version` 允许降级），用户确认后再下载执行；`--check` 只查不下载
+- **可靠性**：下载带指数退避重试 + 停滞 watchdog（30s 无数据流入判定停滞可重试，慢速下载不受影响）；资产经 checksums.txt SHA256 校验后才允许替换；不做签名校验（留作后续增量）
+- **平台自替换**：Unix 同目录临时文件 rename 原子覆盖；Windows 运行中的 exe 不能覆盖但能 rename——旧文件改名 `.old` 再写入新文件（失败回滚），`.old` 留作备份、下次 upgrade 时清理
+- 只支持 GitHub 源（主发布渠道），不做后台自动检查（只显式命令）
 
 ### 依赖版本不 pin
 
