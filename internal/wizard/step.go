@@ -24,14 +24,15 @@ const (
 // through its widget, validates on submit, and commits its value into the
 // bound parameter.
 type Field struct {
-	kind     fieldKind
-	title    string
-	help     string
-	widget   widget
-	commit   func()        // writes the widget value into the bound parameter
-	validate func() string // "" when valid
-	visible  func() bool   // nil means always visible
-	err      string        // latest validation error, shown under the field
+	kind       fieldKind
+	title      string
+	help       string
+	summaryKey string // sidebar row this field maps to ("" = none)
+	widget     widget
+	commit     func()        // writes the widget value into the bound parameter
+	validate   func() string // "" when valid
+	visible    func() bool   // nil means always visible
+	err        string        // latest validation error, shown under the field
 }
 
 func (f *Field) isVisible() bool { return f.visible == nil || f.visible() }
@@ -122,10 +123,11 @@ func templateSelectStep(templates []*template.Template, p *generate.Params) *Ste
 	}
 	w := newSelectWidget(labels, values, p.Template, func(v string) { p.Template = v })
 	return &Step{title: "Template", fields: []*Field{{
-		kind:   kindSelect,
-		title:  "Select a project template",
-		widget: w,
-		commit: func() { p.Template = w.value() },
+		kind:       kindSelect,
+		title:      "Select a project template",
+		summaryKey: "Template",
+		widget:     w,
+		commit:     func() { p.Template = w.value() },
 	}}}
 }
 
@@ -135,10 +137,11 @@ func commonStep(p *generate.Params) *Step {
 	if p.Name == "" {
 		w := newTextWidget(p.Name, "", func(v string) { p.Name = v })
 		fields = append(fields, &Field{
-			kind:   kindInput,
-			title:  "Project name (directory / binary name)",
-			widget: w,
-			commit: func() { p.Name = w.value() },
+			kind:       kindInput,
+			title:      "Project name (directory / binary name)",
+			summaryKey: "Name",
+			widget:     w,
+			commit:     func() { p.Name = w.value() },
 			validate: func() string {
 				if generate.PkgName(w.value()) == "" {
 					return fmt.Sprintf("%q cannot be converted into a valid Go package name", w.value())
@@ -150,10 +153,11 @@ func commonStep(p *generate.Params) *Step {
 	if p.Module == "" {
 		w := newTextWidget(p.Module, "github.com/user/project", func(v string) { p.Module = v })
 		fields = append(fields, &Field{
-			kind:   kindInput,
-			title:  "Module path",
-			widget: w,
-			commit: func() { p.Module = w.value() },
+			kind:       kindInput,
+			title:      "Module path",
+			summaryKey: "Module",
+			widget:     w,
+			commit:     func() { p.Module = w.value() },
 			validate: func() string {
 				if !strings.Contains(w.value(), "/") {
 					return "module path must contain / (e.g. github.com/user/project)"
@@ -182,11 +186,12 @@ func licenseStep(p *generate.Params) *Step {
 	if p.Holder == "" {
 		w := newTextWidget("", "", func(v string) { p.Holder = v })
 		holder = &Field{
-			kind:    kindInput,
-			title:   "License copyright holder",
-			widget:  w,
-			commit:  func() { p.Holder = w.value() },
-			visible: func() bool { return p.License != "" && p.License != "none" },
+			kind:       kindInput,
+			title:      "License copyright holder",
+			summaryKey: "License",
+			widget:     w,
+			commit:     func() { p.Holder = w.value() },
+			visible:    func() bool { return p.License != "" && p.License != "none" },
 			validate: func() string {
 				if strings.TrimSpace(w.value()) == "" {
 					return "copyright holder cannot be empty"
@@ -208,10 +213,11 @@ func licenseStep(p *generate.Params) *Step {
 		},
 	)
 	license := &Field{
-		kind:   kindSelect,
-		title:  "License",
-		widget: w,
-		commit: func() { p.License = w.value() },
+		kind:       kindSelect,
+		title:      "License",
+		summaryKey: "License",
+		widget:     w,
+		commit:     func() { p.License = w.value() },
 	}
 	fields := []*Field{license}
 	if holder != nil {
@@ -225,10 +231,11 @@ func holderStep(p *generate.Params) *Step {
 	p.Holder = gitUserName()
 	w := newTextWidget(p.Holder, "", func(v string) { p.Holder = v })
 	return &Step{title: "License", fields: []*Field{{
-		kind:   kindInput,
-		title:  "License copyright holder",
-		widget: w,
-		commit: func() { p.Holder = w.value() },
+		kind:       kindInput,
+		title:      "License copyright holder",
+		summaryKey: "License",
+		widget:     w,
+		commit:     func() { p.Holder = w.value() },
 		validate: func() string {
 			if strings.TrimSpace(w.value()) == "" {
 				return "copyright holder cannot be empty"
@@ -254,7 +261,7 @@ func optionSteps(tmpl *template.Template, p *generate.Params, current map[string
 
 // optionField creates the field matching an option's type.
 func optionField(o template.Option, p *generate.Params, current any) *Field {
-	f := &Field{title: o.Prompt, help: o.Help}
+	f := &Field{title: o.Prompt, help: o.Help, summaryKey: o.Key}
 	switch o.Type {
 	case template.OptionBoolean:
 		v, _ := current.(bool)

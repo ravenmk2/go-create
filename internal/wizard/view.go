@@ -23,6 +23,11 @@ var (
 	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	borderColor = lipgloss.Color("240")
+	// Sidebar labels and placeholders use a subdued adaptive gray (the charm
+	// default-theme convention), readable on both light and dark terminals;
+	// values keep the terminal's default foreground for maximum contrast.
+	sidebarLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#9B9B9B", Dark: "#5C5C5C"})
+	sidebarValueStyle = lipgloss.NewStyle().Bold(true)
 )
 
 // View renders the whole form. A finished wizard renders nothing so the
@@ -124,31 +129,58 @@ func (m *model) footerText() string {
 	}
 }
 
-// sidebarView renders the live parameter summary.
-func (m *model) sidebarView() string {
+// sidebarRow is one entry (label + value) of the summary sidebar.
+type sidebarRow struct {
+	key         string // matches Field.summaryKey
+	label       string
+	value       string
+	placeholder string // shown dimmed while the value is empty
+}
+
+// sidebarRows collects the current summary rows.
+func (m *model) sidebarRows() []sidebarRow {
 	p := m.p
-	var b strings.Builder
-	b.WriteString(accentStyle.Render("Summary"))
-	kv := func(k, v string) {
-		if v == "" {
-			v = dimStyle.Render("—")
-		}
-		fmt.Fprintf(&b, "\n%s: %s", k, v)
+	rows := []sidebarRow{
+		{key: "Template", label: "Template", value: p.Template, placeholder: "<required>"},
+		{key: "Name", label: "Name", value: p.Name, placeholder: "<required>"},
+		{key: "Module", label: "Module", value: p.Module, placeholder: "<required>"},
+		{key: "License", label: "License", value: licenseDisplay(p), placeholder: "—"},
 	}
-	kv("Template", p.Template)
-	kv("Name", p.Name)
-	kv("Module", p.Module)
-	kv("License", licenseDisplay(p))
 	if m.tmpl != nil {
 		for _, o := range m.tmpl.Options {
 			v, ok := p.Options[o.Key]
 			if !ok {
 				v = m.options[o.Key]
 			}
-			kv(o.Prompt, formatValue(v))
+			rows = append(rows, sidebarRow{key: o.Key, label: o.Prompt, value: formatValue(v), placeholder: "—"})
 		}
 	}
-	lines := strings.Split(b.String(), "\n")
+	return rows
+}
+
+// sidebarView renders the live parameter summary with visual hierarchy:
+// dimmed labels, bright values, dimmed placeholders for empty values, and an
+// accent marker plus bold face on the rows owned by the current step.
+func (m *model) sidebarView() string {
+	active := m.activeSummaryKeys()
+	wrap := lipgloss.NewStyle().Width(sidebarWidth)
+	blocks := []string{accentStyle.Render("Summary")}
+	for _, row := range m.sidebarRows() {
+		marker, label := "  ", sidebarLabelStyle.Render(row.label+":")
+		value := row.value
+		if value == "" {
+			value = sidebarLabelStyle.Render(row.placeholder)
+		}
+		if active[row.key] {
+			marker = accentStyle.Render("▸ ")
+			label = lipgloss.NewStyle().Bold(true).Render(row.label + ":")
+			if row.value != "" {
+				value = sidebarValueStyle.Render(value)
+			}
+		}
+		blocks = append(blocks, wrap.Render(marker+label+" "+value))
+	}
+	lines := strings.Split(lipgloss.JoinVertical(lipgloss.Left, blocks...), "\n")
 	if len(lines) > m.vp.Height {
 		lines = lines[:m.vp.Height]
 	}
@@ -180,7 +212,7 @@ func (m *model) stepContent() (string, []fieldRange) {
 	var ranges []fieldRange
 	y := 0
 	if s.body != nil {
-		body := s.body()
+		body := lipgloss.NewStyle().Width(m.vp.Width).Render(s.body())
 		blocks = append(blocks, body)
 		y += lipgloss.Height(body) + 1
 	}
@@ -217,21 +249,26 @@ func (m *model) refresh() {
 }
 
 // view renders the field: title, optional help, the control, and the
-// validation error below it.
+// validation error below it. Text is soft-wrapped to the content width so
+// long prompts never overflow the main area.
 func (f *Field) view(focused bool, width int) string {
-	var b strings.Builder
-	if focused {
-		b.WriteString(accentStyle.Render(f.title))
-	} else {
-		b.WriteString(f.title)
+	if width < 1 {
+		width = 1
 	}
+	wrap := lipgloss.NewStyle().Width(width)
+	title := f.title
+	if focused {
+		title = accentStyle.Render(title)
+	}
+	var b strings.Builder
+	b.WriteString(wrap.Render(title))
 	if f.help != "" {
-		b.WriteString("\n" + helpStyle.Render(f.help))
+		b.WriteString("\n" + wrap.Render(helpStyle.Render(f.help)))
 	}
 	b.WriteByte('\n')
 	b.WriteString(f.widget.view(focused, width))
 	if f.err != "" {
-		b.WriteString("\n" + errStyle.Render(f.err))
+		b.WriteString("\n" + wrap.Render(errStyle.Render(f.err)))
 	}
 	return b.String()
 }

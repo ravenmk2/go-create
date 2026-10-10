@@ -246,3 +246,15 @@ func (m *model) focus() {
 		}
 	}
 }
+
+// activeSummaryKeys returns the sidebar row keys owned by the current step's
+// visible fields; the sidebar highlights these rows.
+func (m *model) activeSummaryKeys() map[string]bool {
+	keys := map[string]bool{}
+	for _, f := range m.curFields() {
+		if f.summaryKey != "" {
+			keys[f.summaryKey] = true
+		}
+	}
+	return keys
+}

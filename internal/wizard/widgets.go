@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // widget is a single interactive control inside a Field. The model forwards
@@ -103,21 +104,24 @@ func (w *selectWidget) changed() {
 	}
 }
 
-func (w *selectWidget) view(focused bool, _ int) string {
+func (w *selectWidget) view(focused bool, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	wrap := lipgloss.NewStyle().Width(width)
 	var b strings.Builder
 	for i, label := range w.labels {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
+		line := "  " + label
 		if i == w.cursor {
+			line = "▸ " + label
 			if focused {
-				b.WriteString(accentStyle.Render("▸ " + label))
-			} else {
-				b.WriteString("▸ " + label)
+				line = accentStyle.Render(line)
 			}
-		} else {
-			b.WriteString("  " + label)
 		}
+		b.WriteString(wrap.Render(line))
 	}
 	return b.String()
 }
@@ -166,7 +170,11 @@ func (w *multiWidget) changed() {
 	}
 }
 
-func (w *multiWidget) view(focused bool, _ int) string {
+func (w *multiWidget) view(focused bool, width int) string {
+	if width < 1 {
+		width = 1
+	}
+	wrap := lipgloss.NewStyle().Width(width)
 	var b strings.Builder
 	for i, label := range w.labels {
 		if i > 0 {
@@ -176,16 +184,14 @@ func (w *multiWidget) view(focused bool, _ int) string {
 		if w.selected[i] {
 			box = "[x]"
 		}
-		line := fmt.Sprintf("%s %s", box, label)
+		line := "  " + fmt.Sprintf("%s %s", box, label)
 		if i == w.cursor {
+			line = "▸ " + fmt.Sprintf("%s %s", box, label)
 			if focused {
-				b.WriteString(accentStyle.Render("▸ " + line))
-			} else {
-				b.WriteString("▸ " + line)
+				line = accentStyle.Render(line)
 			}
-		} else {
-			b.WriteString("  " + line)
 		}
+		b.WriteString(wrap.Render(line))
 	}
 	return b.String()
 }
