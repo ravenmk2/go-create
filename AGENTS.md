@@ -17,4 +17,4 @@ go-create/
 文档变化时同步更新
 
 - docs/architecture.md：架构分层与关键设计决策及理由
-- docs/template-contract.md：模板契约完整参考（面向模板作者）
+- docs/template-spec.md：模板规范完整参考（面向模板作者）
