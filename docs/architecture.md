@@ -10,16 +10,16 @@ internal/
 ├── template/       模板模型：加载（embed + 用户目录）、校验、when 求值、渲染
 ├── generate/       生成编排：参数校验 → 渲染 → 写盘 → 后置动作（git init / go mod tidy）
 ├── cli/            cobra 命令：root（裸运行进向导）/ new（--set 解析与校验）/ list
-└── wizard/         huh 动态表单：按模板描述文件生成选项表单
+└── wizard/         交互向导：TTY 走 bubbletea 自绘 TUI（步骤指示器 + 实时摘要侧栏 + 前进/后退）；非 TTY 降级 huh accessible 模式
 templates/          内置模板（cli / web / lib），embed 进二进制
 ```
 
 数据流（两条收集途径汇入同一参数集）：
 
 ```txt
-TUI 向导（huh）  ─┐
-                  ├─→ generate.Params ─→ template.Render ─→ 写盘 ─→ git init / go mod tidy
---set/--yes 参数 ─┘        （公共参数 + 模板选项）
+TUI 向导  ─┐
+           ├─→ generate.Params ─→ template.Render ─→ 写盘 ─→ git init / go mod tidy
+--set/--yes 参数 ─┘   （公共参数 + 模板选项）
 ```
 
 ## 关键设计决策
@@ -40,6 +40,14 @@ TUI 向导（huh）  ─┐
 1. **加载期**：YAML 严格模式（未知字段报错）；`schema` 版本校验（缺省 1，拒绝更高版本，为将来破坏性变更留门）；选项 schema 校验；when 表达式用 expr-lang **编译期校验**（引用未声明选项 key 直接报错）；清单 src 存在性检查
 2. **生成期**：`files/` 下未列入清单的文件 → 警告；静态复制文件内容含分隔符 → 警告（疑似漏登记 render）；dest 路径安全校验（相对、无 `..`、渲染后非空）
 3. **自测矩阵**：`template.yaml` 的 `tests` 段声明代表性选项组合，go-create 自身 `go test` 逐组生成到临时目录并 `go build ./...` 验证产物可编译——模板扩展的护栏
+
+### 向导 UI：bubbletea 自绘 + huh 降级
+
+向导交互层用 bubbletea/lipgloss 自绘（步骤指示器、实时摘要侧栏、窗体布局），而非继续堆叠 huh 表单。理由：选项多了之后 huh 单组堆叠渲染会溢出终端；且需要步骤级前进/后退与全局状态可见性，自绘 Model 控制粒度更细。选项按描述文件的 `group` 字段分页，未分组的自动按每页 5 个分页。非 TTY 环境（管道/重定向）没有交互界面可用，降级为 huh accessible（纯文本逐行问答），huh 依赖仅为此保留。
+
+### 生成到非空目录
+
+目标目录允许非空（支持"先 git init / clone 空仓库再生成"的场景）：交互向导在生成前显式确认（列出目录内容，提示同名文件将被覆盖）；`--yes` 视为已确认直接生成。生成期逐文件检测覆盖并输出 warning；目标目录已含 `.git` 时跳过 `git init`（避免无意义的 reinit）。后置动作（git init / go mod tidy）失败一律降级为 warning，不阻断生成；其中 go mod tidy 依赖网络，内置 3 次线性退避重试以吸收代理/仓库的瞬时故障。
 
 ### 依赖版本不 pin
 

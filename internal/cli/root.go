@@ -25,6 +25,9 @@ func Execute(version string) {
 			if err != nil {
 				return err
 			}
+			if err := confirmNonEmptyDir(&p); err != nil {
+				return err
+			}
 			return runGenerate(cmd, tmpl, p)
 		},
 	}

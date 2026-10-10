@@ -1,11 +1,13 @@
 package generate
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ravenmk2/go-create/internal/template"
 )
@@ -50,7 +52,12 @@ func TestTemplateMatrix(t *testing.T) {
 				assertOptionGatedFiles(t, tmpl.Name, dir, tc)
 
 				if !testing.Short() {
-					runCmd(t, dir, nil, "go", "mod", "tidy")
+					// module fetching can hit transient proxy failures; retry like Generate does
+					if err := retry(3, 2*time.Second, func() error {
+						return runCmdE(dir, nil, "go", "mod", "tidy")
+					}); err != nil {
+						t.Fatal(err)
+					}
 					// embed scenario: create the web/dist placeholder file before compiling per convention (same as the CI step)
 					if _, err := os.Stat(filepath.Join(dir, "web", "embed.go")); err == nil {
 						distDir := filepath.Join(dir, "web", "dist")
@@ -135,11 +142,18 @@ func assertOptionGatedFiles(t *testing.T, tmplName, dir string, tc template.Test
 
 func runCmd(t *testing.T, dir string, env []string, name string, args ...string) {
 	t.Helper()
+	if err := runCmdE(dir, env, name, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func runCmdE(dir string, env []string, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, out)
+		return fmt.Errorf("%s %s failed: %v\n%s", name, strings.Join(args, " "), err, out)
 	}
+	return nil
 }

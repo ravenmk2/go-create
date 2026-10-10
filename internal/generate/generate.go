@@ -2,7 +2,6 @@
 package generate
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -108,9 +107,6 @@ func Generate(t *template.Template, p Params) (*Result, error) {
 	if dir == "" {
 		dir = p.Name
 	}
-	if err := checkTargetDir(dir); err != nil {
-		return nil, err
-	}
 
 	repo := RepoSlug(p.Module)
 	var warnings []string
@@ -148,6 +144,9 @@ func Generate(t *template.Template, p Params) (*Result, error) {
 
 	for _, f := range files {
 		dest := filepath.Join(dir, filepath.FromSlash(f.Path))
+		if _, err := os.Stat(dest); err == nil {
+			warnings = append(warnings, fmt.Sprintf("overwrote existing file %s", f.Path))
+		}
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return nil, err
 		}
@@ -168,13 +167,19 @@ func Generate(t *template.Template, p Params) (*Result, error) {
 	}
 
 	if !p.NoGit {
-		if err := run(dir, "git", "init"); err != nil {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+			warnings = append(warnings, "target directory already contains .git; skipping git init")
+		} else if err := run(dir, "git", "init"); err != nil {
 			warnings = append(warnings, fmt.Sprintf("git init failed (%v); run it manually", err))
 		}
 	}
 	if !p.NoTidy {
-		if err := run(dir, "go", "mod", "tidy"); err != nil {
-			warnings = append(warnings, fmt.Sprintf("go mod tidy failed (%v); cd into %s and run it manually", err, dir))
+		// go mod tidy fetches modules over the network; transient proxy/registry
+		// failures are common, so retry with linear backoff before giving up
+		if err := retry(3, 2*time.Second, func() error {
+			return run(dir, "go", "mod", "tidy")
+		}); err != nil {
+			warnings = append(warnings, fmt.Sprintf("go mod tidy failed after retries (%v); cd into %s and run it manually", err, dir))
 		}
 	}
 
@@ -192,21 +197,6 @@ func normalizeLicense(id string) string {
 	return id
 }
 
-// checkTargetDir requires the target directory to not exist or be empty.
-func checkTargetDir(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if len(entries) > 0 {
-		return fmt.Errorf("target directory %s already exists and is not empty", dir)
-	}
-	return nil
-}
-
 func run(dir, name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
@@ -215,4 +205,20 @@ func run(dir, name string, args ...string) error {
 		return fmt.Errorf("%s %s: %w\n%s", name, strings.Join(args, " "), err, out)
 	}
 	return nil
+}
+
+// retry calls fn up to attempts times, sleeping baseDelay*(n) before the nth
+// retry (linear backoff). It returns nil on the first success, or the last
+// error when all attempts fail.
+func retry(attempts int, baseDelay time.Duration, fn func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		if i < attempts-1 {
+			time.Sleep(baseDelay * time.Duration(i+1))
+		}
+	}
+	return err
 }

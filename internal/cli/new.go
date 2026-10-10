@@ -57,6 +57,9 @@ func newCmd() *cobra.Command {
 				if tmpl, err = wizard.Run(templates, &p); err != nil {
 					return err
 				}
+				if err := confirmNonEmptyDir(&p); err != nil {
+					return err
+				}
 			}
 			return runGenerate(cmd, tmpl, p)
 		},
