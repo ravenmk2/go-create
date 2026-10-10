@@ -41,6 +41,7 @@ type Option struct {
 	Type    OptionType `yaml:"type"`
 	Prompt  string     `yaml:"prompt"`
 	Help    string     `yaml:"help"`
+	Group   string     `yaml:"group"` // wizard pagination: options sharing a group name are asked on the same page
 	Default any        `yaml:"default"`
 	Choices []Choice   `yaml:"choices"`
 	Pattern string     `yaml:"pattern"` // regex validation for the input

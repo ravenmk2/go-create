@@ -1,4 +1,4 @@
-# 模板契约
+# 模板规范
 
 面向模板作者的完整参考。一个模板 = 一个目录：`template.yaml`（描述文件）+ `files/`（全部源文件）。
 
@@ -23,6 +23,7 @@ options:                     # 模板选项，可空
     type: boolean            # 必填：boolean / string / choice / multichoice
     prompt: 集成 SQLite      # 必填，向导中的提问
     help: 详细说明           # 可选，向导中的辅助说明
+    group: 构建              # 可选，向导分页：同名 group 的选项同页展示（缺省自动分页）
     default: false           # 可选，缺省为该类型零值
     choices:                 # choice/multichoice 必填
       - {value: chi, label: chi}
