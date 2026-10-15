@@ -99,6 +99,18 @@ when: '"windows-latest" in ci_platforms'    # multichoice 成员（注意 yaml �
 - 外加一个全开组合
 - 测试会真实执行 `go mod tidy` + `go build ./...`（需网络拉依赖），embed 类场景按规范自动创建 web/dist 占位文件
 
+## 内置 web 模板：镜像与发布选项
+
+| 选项 | 默认值 | 产物与行为 |
+|---|---|---|
+| `docker_dev` | `true` | 生成 `docker-dev.yml` 和 Dockerfile，分支推送或手动触发后发布 GHCR `:dev` 镜像 |
+| `docker_image` | `false` | 生成 Dockerfile，并通过 GoReleaser 发布正式版本镜像 |
+| `goreleaser` | `true` | 生成 `.goreleaser.yml` 和 `release.yml`；`docker_image=true` 时也会生成这两项 |
+
+`docker_dev` 可单独开启（`docker_image=false, goreleaser=false`），也可单独关闭，不影响正式发布。开发镜像流程在 Actions 内构建前后端，再以 `context: .` 将生成的二进制交给现有 Dockerfile 打包。启用 `embed_frontend` 时复用 `scripts/build-web.sh`，支持未创建前端时的占位文件。
+
+`master/main/dev/develop` 共用 `ghcr.io/<小写 github.repository>:dev`，以固定并发组、`cancel-in-progress: false` 避免同时发布；GitHub 默认只保留一个待运行任务。开发镜像固定为 Linux amd64，保留独立的 lint/test 检查，`test.yml` 仍照常生成和运行。
+
 ## 自定义模板
 
 放置于 `~/.config/go-create/templates/<name>/`（全平台统一），结构同上。同名模板覆盖内置模板。`go-create list` 可查看全部模板及来源（builtin/user）。

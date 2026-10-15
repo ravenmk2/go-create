@@ -40,6 +40,11 @@ options:
     prompt: Generate goreleaser release config (.goreleaser.yml + release.yml)
     group: CI & Release
     default: true
+  - key: docker_dev
+    type: boolean
+    prompt: Publish GHCR development image (:dev) on branch pushes
+    group: CI & Release
+    default: true
   - key: makefile
     type: boolean
     prompt: Generate Makefile
@@ -106,7 +111,7 @@ files:
   - src: Dockerfile.tpl
     dest: Dockerfile
     render: true
-    when: docker_image
+    when: docker_image || docker_dev
   - src: .goreleaser.yml.tpl
     dest: .goreleaser.yml
     render: true
@@ -114,6 +119,10 @@ files:
   - src: .github/workflows/test.yml.tpl
     dest: .github/workflows/test.yml
     render: true
+  - src: .github/workflows/docker-dev.yml.tpl
+    dest: .github/workflows/docker-dev.yml
+    render: true
+    when: docker_dev
   - src: .github/workflows/release.yml.tpl
     dest: .github/workflows/release.yml
     render: true
@@ -146,10 +155,13 @@ tests:
   - name: sqlite
     set: {sqlite: true}
   - name: docker
-    set: {docker_image: true, goreleaser: false}
+    set: {docker_image: true, docker_dev: false, goreleaser: false}
+  - name: docker-dev-only
+    set: {goreleaser: false}
   - name: no-extras
     set:
       goreleaser: false
+      docker_dev: false
       makefile: false
       ci_platforms: [ubuntu-latest]
   - name: full
@@ -160,6 +172,7 @@ tests:
       embed_frontend: true
       sqlite: true
       docker_image: true
+      docker_dev: true
       goreleaser: true
       makefile: true
       ci_platforms: [ubuntu-latest, windows-latest, macos-latest]

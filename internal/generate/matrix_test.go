@@ -116,8 +116,25 @@ func assertOptionGatedFiles(t *testing.T, tmplName, dir string, tc template.Test
 	}
 	switch tmplName {
 	case "web":
-		if v, _ := tc.Set["docker_image"].(bool); v != has("Dockerfile") {
-			t.Errorf("docker_image=%v does not match Dockerfile presence", v)
+		dockerImage, _ := tc.Set["docker_image"].(bool)
+		dockerDev := true
+		if v, ok := tc.Set["docker_dev"].(bool); ok {
+			dockerDev = v
+		}
+		if want := dockerImage || dockerDev; want != has("Dockerfile") {
+			t.Errorf("docker_image=%v, docker_dev=%v does not match Dockerfile presence", dockerImage, dockerDev)
+		}
+		if dockerDev != has(".github/workflows/docker-dev.yml") {
+			t.Errorf("docker_dev=%v does not match docker-dev.yml presence", dockerDev)
+		}
+		goreleaser := true
+		if v, ok := tc.Set["goreleaser"].(bool); ok {
+			goreleaser = v
+		}
+		for _, path := range []string{".goreleaser.yml", ".github/workflows/release.yml"} {
+			if want := goreleaser || dockerImage; want != has(path) {
+				t.Errorf("goreleaser=%v, docker_image=%v does not match %s presence", goreleaser, dockerImage, path)
+			}
 		}
 		if v, _ := tc.Set["embed_frontend"].(bool); v != has("web/embed.go") {
 			t.Errorf("embed_frontend=%v does not match web/embed.go presence", v)

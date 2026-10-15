@@ -59,6 +59,14 @@ TUI 向导  ─┐
 - **平台自替换**：Unix 同目录临时文件 rename 原子覆盖；Windows 运行中的 exe 不能覆盖但能 rename——旧文件改名 `.old` 再写入新文件（失败回滚），`.old` 留作备份、下次 upgrade 时清理
 - 只支持 GitHub 源（主发布渠道），不做后台自动检查（只显式命令）
 
+### web 模板的开发镜像发布
+
+`docker_dev` 独立控制 `.github/workflows/docker-dev.yml`，默认开启，与正式镜像选项 `docker_image`、发布选项 `goreleaser` 解耦。`docker_dev || docker_image` 时生成 Dockerfile；开发镜像本身不触发 GoReleaser 配置生成。
+
+开发工作流在 `master/main/dev/develop` 分支推送或手动触发时，先 lint、vet、test，再由 Actions 构建前端（启用 embed 时调用 `scripts/build-web.sh`）和 `CGO_ENABLED=0` 的 Linux amd64 二进制，最后复用只打包二进制的 Dockerfile 推送 GHCR。这样开发与正式发布共用运行时镜像定义，无需维护另一份源码构建 Dockerfile。镜像路径取运行时 `github.repository` 并转小写，不依赖模块路径。
+
+各分支共用 `:dev` 标签，因此工作流使用不含分支名的固定 concurrency group，`cancel-in-progress: false` 让当前运行完成后再执行后续运行，防止多个分支同时发布。GitHub 默认仅保留一个待运行任务，更新的待运行任务会替换旧的；不承诺每次推送均发布或 FIFO 顺序。现阶段保留与 `test.yml` 重复的检查。
+
 ### 依赖版本不 pin
 
 模板的 go.mod 只写 `module` + `go` 指令；框架依赖仅体现在源码 import 中，生成后由 `go mod tidy` 拉取最新兼容版本。模板零版本腐化维护；可复现性由生成项目自身提交的 go.sum 兜底。无网络时降级为提示手动执行。
