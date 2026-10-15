@@ -138,7 +138,8 @@ func commonStep(p *generate.Params) *Step {
 		w := newTextWidget(p.Name, "", func(v string) { p.Name = v })
 		fields = append(fields, &Field{
 			kind:       kindInput,
-			title:      "Project name (directory / binary name)",
+			title:      "Project name",
+			help:       "Used for the directory and binary name.",
 			summaryKey: "Name",
 			widget:     w,
 			commit:     func() { p.Name = w.value() },
@@ -265,8 +266,9 @@ func optionField(o template.Option, p *generate.Params, current any) *Field {
 	switch o.Type {
 	case template.OptionBoolean:
 		v, _ := current.(bool)
-		w := newSelectWidget([]string{"Yes", "No"}, []string{"true", "false"}, strconv.FormatBool(v),
+		w := newSelectWidget([]string{"Enabled", "Disabled"}, []string{"true", "false"}, strconv.FormatBool(v),
 			func(s string) { p.Options[o.Key] = s == "true" })
+		w.inline = true
 		f.kind = kindSelect
 		f.widget = w
 		f.commit = func() { p.Options[o.Key] = w.value() == "true" }
@@ -318,7 +320,7 @@ func choiceLists(choices []template.Choice) (labels, values []string) {
 // a false value into the canceled result.
 func confirmStep(tmpl *template.Template, p *generate.Params, current map[string]any, confirmed *bool) *Step {
 	*confirmed = true // the cursor starts on Create
-	w := newSelectWidget([]string{"Create", "Cancel"}, []string{"create", "cancel"}, "create",
+	w := newSelectWidget([]string{"Create project", "Cancel"}, []string{"create", "cancel"}, "create",
 		func(v string) { *confirmed = v == "create" })
 	return &Step{
 		title: "Confirm",

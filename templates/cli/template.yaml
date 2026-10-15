@@ -4,10 +4,12 @@ description: "Command-line interface (CLI) project: cmd entrypoint + internal pr
 options:
   - key: display_name
     type: string
-    prompt: Project title (friendly display name)
+    prompt: Project title
+    help: Friendly display name for the project.
   - key: description
     type: string
-    prompt: One-line project description
+    prompt: Description
+    help: A one-line description of the project.
   - key: cli_framework
     type: choice
     prompt: CLI framework
@@ -17,11 +19,13 @@ options:
     default: cobra
   - key: goreleaser
     type: boolean
-    prompt: Generate goreleaser release config (.goreleaser.yml + release.yml)
+    prompt: GoReleaser
+    help: Generate .goreleaser.yml and release.yml.
     default: true
   - key: makefile
     type: boolean
-    prompt: Generate Makefile
+    prompt: Makefile
+    help: Generate a Makefile.
     default: true
   - key: ci_platforms
     type: multichoice

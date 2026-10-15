@@ -4,11 +4,13 @@ description: "Server application: HTTP service (net/http / chi / gin / echo) wit
 options:
   - key: display_name
     type: string
-    prompt: "Project title (friendly display name)"
+    prompt: Project title
+    help: Friendly display name for the project.
     group: Basic
   - key: description
     type: string
-    prompt: "One-line project description"
+    prompt: Description
+    help: A one-line description of the project.
     group: Basic
   - key: http_framework
     type: choice
@@ -22,37 +24,43 @@ options:
     default: nethttp
   - key: embed_frontend
     type: boolean
-    prompt: Embed frontend build output (web/dist, with SPA fallback)
+    prompt: Embed frontend
+    help: Embed web/dist in the binary, with SPA fallback.
     group: Features
     default: false
   - key: sqlite
     type: boolean
-    prompt: Integrate SQLite (automatic CGO / pure-Go driver switching)
+    prompt: SQLite
+    help: Switch between CGO and pure-Go drivers automatically.
     group: Features
     default: false
   - key: docker_image
     type: boolean
-    prompt: Publish GHCR container image (via goreleaser; its config is generated automatically)
+    prompt: Release image
+    help: Publish GHCR images via GoReleaser; release config is generated automatically.
     group: Features
     default: false
   - key: goreleaser
     type: boolean
-    prompt: Generate goreleaser release config (.goreleaser.yml + release.yml)
+    prompt: GoReleaser
+    help: Generate .goreleaser.yml and release.yml.
     group: CI & Release
     default: true
   - key: docker_dev
     type: boolean
-    prompt: Publish GHCR development image (:dev) on branch pushes
+    prompt: Development image
+    help: Publish GHCR :dev on branch pushes or manual workflow runs.
     group: CI & Release
     default: true
   - key: makefile
     type: boolean
-    prompt: Generate Makefile
+    prompt: Makefile
+    help: Generate a Makefile.
     group: CI & Release
     default: true
   - key: ci_platforms
     type: multichoice
-    prompt: CI test platform matrix
+    prompt: CI test platforms
     group: CI & Release
     choices:
       - {value: ubuntu-latest, label: Ubuntu}

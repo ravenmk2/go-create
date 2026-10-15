@@ -1,6 +1,7 @@
 package wizard
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -113,7 +114,7 @@ func TestWrappedContentKeepsFocusVisible(t *testing.T) {
 
 // TestSidebarHierarchy checks the sidebar's visual hierarchy: the rows owned
 // by the current step carry the accent marker, and empty values render their
-// dimmed placeholder.
+// required placeholder.
 func TestSidebarHierarchy(t *testing.T) {
 	p := &generate.Params{}
 	m := newModel(testTemplates(), p)
@@ -162,4 +163,81 @@ func TestSidebarHighlightsOptionRows(t *testing.T) {
 	if strings.Contains(v, "▸ Name:") {
 		t.Fatal("common rows must not be active on an option page")
 	}
+}
+
+// Exercise the real web form, including inputs and the long release options,
+// while repeatedly resizing through all three layouts.
+func TestWebStepsFitAfterResize(t *testing.T) {
+	tmpl, err := template.Load("web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newModel([]*template.Template{tmpl}, &generate.Params{})
+	for _, size := range []tea.WindowSizeMsg{
+		{Width: 180, Height: 48},
+		{Width: 96, Height: 24},
+		{Width: 80, Height: 24},
+		{Width: 72, Height: 20},
+		{Width: 40, Height: 14},
+		{Width: 20, Height: 8},
+		{Width: 120, Height: 40},
+	} {
+		t.Run(fmt.Sprintf("%dx%d", size.Width, size.Height), func(t *testing.T) {
+			send(m, size)
+			for i, s := range m.steps {
+				m.stepIdx = i
+				for j := range s.visibleFields() {
+					m.fieldIdx = j
+					m.focus()
+					assertFits(t, m.View(), size.Width, size.Height)
+				}
+			}
+		})
+	}
+}
+
+func TestResponsiveSummary(t *testing.T) {
+	tmpl, err := template.Load("web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := newModel([]*template.Template{tmpl}, &generate.Params{
+		Template: "web", Name: "demo", Module: "example.com/demo", License: "none",
+	})
+	for i, s := range m.steps {
+		if s.title == "CI & Release" {
+			m.stepIdx = i
+		}
+	}
+	send(m, tea.WindowSizeMsg{Width: 96, Height: 20})
+	v := stripANSI(m.View())
+	if !strings.Contains(v, "Development image:") {
+		t.Fatal("current release options must stay visible even in a short sidebar")
+	}
+	if !strings.Contains(v, "more on Confirm") {
+		t.Fatal("a clipped summary must tell users where to read the rest")
+	}
+	send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	v = stripANSI(m.View())
+	if strings.Contains(v, "Summary") || m.vp.Width < 60 {
+		t.Fatal("medium terminals must give the form room by hiding the sidebar")
+	}
+}
+
+func TestBooleanHorizontalNavigation(t *testing.T) {
+	p := &generate.Params{Options: map[string]any{}}
+	f := optionField(template.Option{Key: "feature", Type: template.OptionBoolean}, p, true)
+	f.widget.update(tea.KeyMsg{Type: tea.KeyRight})
+	if p.Options["feature"] != false {
+		t.Fatal("right must disable the feature and immediately update the summary")
+	}
+	f.widget.update(tea.KeyMsg{Type: tea.KeyLeft})
+	f.commit()
+	if p.Options["feature"] != true {
+		t.Fatal("left must enable the feature and preserve its value on commit")
+	}
+	if got := stripANSI(f.widget.view(true, 40)); strings.Contains(got, "\n") {
+		t.Fatal("boolean choices should share a row when space permits")
+	}
+	assertFits(t, f.widget.view(true, 12), 12, 6)
 }

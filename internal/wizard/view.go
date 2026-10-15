@@ -14,19 +14,25 @@ const (
 	minFramedWidth  = 72
 	minFramedHeight = 20
 	sidebarWidth    = 28
+	minSidebarWidth = 96
+	maxFrameWidth   = 116
+	maxFrameHeight  = 32
 )
 
 var (
-	accentStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
-	headerStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63"))
-	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	errStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	borderColor = lipgloss.Color("240")
-	// Sidebar labels and placeholders use a subdued adaptive gray (the charm
-	// default-theme convention), readable on both light and dark terminals;
-	// values keep the terminal's default foreground for maximum contrast.
-	sidebarLabelStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#9B9B9B", Dark: "#5C5C5C"})
+	accentColor        = lipgloss.AdaptiveColor{Light: "#367478", Dark: "#83B5B7"}
+	borderColor        = lipgloss.AdaptiveColor{Light: "#B0B0B0", Dark: "#535353"}
+	accentStyle        = lipgloss.NewStyle().Bold(true).Foreground(accentColor)
+	headerStyle        = lipgloss.NewStyle().Bold(true)
+	dimStyle           = lipgloss.NewStyle().Foreground(borderColor)
+	focusedChoiceStyle = lipgloss.NewStyle().Bold(true).
+				Foreground(lipgloss.Color("#163638")).
+				Background(lipgloss.AdaptiveColor{Light: "#B7D4D5", Dark: "#83B5B7"})
+	sidebarLabelStyle = lipgloss.NewStyle().Foreground(accentColor)
+	// Questions, help, values, placeholders and keyboard instructions are all
+	// required reading. Keep their foreground inherited from the terminal.
+	helpStyle         = lipgloss.NewStyle()
+	errStyle          = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "#A83232", Dark: "#ED9292"})
 	sidebarValueStyle = lipgloss.NewStyle().Bold(true)
 )
 
@@ -36,11 +42,12 @@ func (m *model) View() string {
 	if m.done || m.canceled || m.err != nil || m.width == 0 {
 		return ""
 	}
+	m.layout()
 	m.refresh()
 	if m.compact() {
 		return m.compactView()
 	}
-	return m.framedView()
+	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, m.framedView())
 }
 
 func (m *model) compact() bool {
@@ -49,13 +56,15 @@ func (m *model) compact() bool {
 
 // innerWidth is the content width inside the border and horizontal padding.
 func (m *model) innerWidth() int {
-	return m.width - 4
+	return min(m.width, maxFrameWidth) - 6
 }
 
+func (m *model) showSidebar() bool { return !m.compact() && m.width >= minSidebarWidth }
+
 func (m *model) mainWidth() int {
-	w := m.innerWidth() - sidebarWidth - 1 // sidebar + divider
-	if w < 16 {
-		w = 16
+	w := m.innerWidth() - 2 // main area's horizontal padding
+	if m.showSidebar() {
+		w -= sidebarWidth + 2 // divider and sidebar padding
 	}
 	return w
 }
@@ -64,10 +73,10 @@ func (m *model) mainWidth() int {
 func (m *model) layout() {
 	if m.compact() {
 		m.vp.Width = m.width
-		m.vp.Height = m.height - 2 // header + footer
+		m.vp.Height = m.height - 1 - lipgloss.Height(m.footerView(m.width))
 	} else {
 		m.vp.Width = m.mainWidth()
-		m.vp.Height = m.height - 6 // border + header + separators + footer
+		m.vp.Height = min(m.height, maxFrameHeight) - 7 - lipgloss.Height(m.footerView(m.innerWidth()))
 	}
 	if m.vp.Width < 1 {
 		m.vp.Width = 1
@@ -82,18 +91,22 @@ func (m *model) layout() {
 func (m *model) framedView() string {
 	header := headerStyle.MaxWidth(m.innerWidth()).Render(m.headerText())
 	sep := dimStyle.Render(strings.Repeat("─", m.innerWidth()))
-	footer := dimStyle.MaxWidth(m.innerWidth()).Render(" " + m.footerText())
+	footer := m.footerView(m.innerWidth())
 
-	divider := dimStyle.Render(strings.Repeat("│\n", m.vp.Height-1) + "│")
-	main := lipgloss.NewStyle().Width(m.mainWidth()).Height(m.vp.Height).Render(m.vp.View())
-	sidebar := lipgloss.NewStyle().Width(sidebarWidth).Height(m.vp.Height).Render(m.sidebarView())
-	body := lipgloss.JoinHorizontal(lipgloss.Top, main, divider, sidebar)
+	main := lipgloss.NewStyle().Width(m.vp.Width).Height(m.vp.Height).Render(m.vp.View())
+	body := lipgloss.NewStyle().Padding(1, 1).Render(main)
+	if m.showSidebar() {
+		divider := dimStyle.Render(strings.Repeat("│\n", m.vp.Height+1) + "│")
+		sidebar := lipgloss.NewStyle().Width(sidebarWidth).Height(m.vp.Height).Render(m.sidebarView())
+		sidebar = lipgloss.NewStyle().Padding(1, 0, 1, 1).Render(sidebar)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, body, divider, sidebar)
+	}
 
 	content := lipgloss.JoinVertical(lipgloss.Left, header, sep, body, sep, footer)
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderColor).
-		Padding(0, 1).
+		Padding(0, 2).
 		Render(content)
 }
 
@@ -102,7 +115,7 @@ func (m *model) compactView() string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		headerStyle.MaxWidth(m.width).Render(m.headerText()),
 		m.vp.View(),
-		dimStyle.MaxWidth(m.width).Render(m.footerText()),
+		m.footerView(m.width),
 	)
 }
 
@@ -111,22 +124,30 @@ func (m *model) headerText() string {
 	if s := m.curStep(); s != nil {
 		title = s.title
 	}
-	return fmt.Sprintf(" Step %d/%d · %s", m.stepIdx+1, len(m.steps), title)
+	return fmt.Sprintf("%s Step %d/%d · %s", accentStyle.Render("▸"), m.stepIdx+1, len(m.steps), title)
 }
 
 // footerText returns the key hints, tuned to the focused field's control type.
 func (m *model) footerText() string {
-	nav := "shift+tab back · ctrl+c quit"
+	nav := "Shift+Tab back · Esc quit"
 	switch f := m.curField(); {
 	case f == nil:
 		return nav
 	case f.kind == kindMultiSelect:
-		return "space toggle · enter next · " + nav
+		return "↑/↓ move · Space toggle · Enter next · " + nav
 	case f.kind == kindSelect:
-		return "↑/↓ move · enter next · " + nav
+		if w, ok := f.widget.(*selectWidget); ok && w.inline {
+			return "←/→ choose · Enter next · " + nav
+		}
+		return "↑/↓ move · Enter next · " + nav
 	default:
-		return "enter next · " + nav
+		return "Enter next · " + nav
 	}
+}
+
+func (m *model) footerView(width int) string {
+	return lipgloss.NewStyle().Width(max(1, width)).
+		MaxHeight(max(1, m.height-2)).Render(m.footerText())
 }
 
 // sidebarRow is one entry (label + value) of the summary sidebar.
@@ -134,7 +155,7 @@ type sidebarRow struct {
 	key         string // matches Field.summaryKey
 	label       string
 	value       string
-	placeholder string // shown dimmed while the value is empty
+	placeholder string
 }
 
 // sidebarRows collects the current summary rows.
@@ -152,37 +173,47 @@ func (m *model) sidebarRows() []sidebarRow {
 			if !ok {
 				v = m.options[o.Key]
 			}
-			rows = append(rows, sidebarRow{key: o.Key, label: o.Prompt, value: formatValue(v), placeholder: "—"})
+			label := o.Prompt
+			if lipgloss.Width(label) > 18 {
+				label = strings.ReplaceAll(o.Key, "_", " ")
+				label = strings.ToUpper(label[:1]) + label[1:]
+			}
+			rows = append(rows, sidebarRow{key: o.Key, label: label, value: formatValue(v), placeholder: "—"})
 		}
 	}
 	return rows
 }
 
-// sidebarView renders the live parameter summary with visual hierarchy:
-// dimmed labels, bright values, dimmed placeholders for empty values, and an
-// accent marker plus bold face on the rows owned by the current step.
+// sidebarView puts the current page first so long option lists cannot hide it.
+// Labels use readable teal; values retain the terminal foreground in bold.
 func (m *model) sidebarView() string {
 	active := m.activeSummaryKeys()
 	wrap := lipgloss.NewStyle().Width(sidebarWidth)
-	blocks := []string{accentStyle.Render("Summary")}
-	for _, row := range m.sidebarRows() {
+	blocks := []string{headerStyle.Render("Summary"), ""}
+	rows := m.sidebarRows()
+	slices.SortStableFunc(rows, func(a, b sidebarRow) int {
+		if active[a.key] == active[b.key] {
+			return 0
+		}
+		if active[a.key] {
+			return -1
+		}
+		return 1
+	})
+	for _, row := range rows {
 		marker, label := "  ", sidebarLabelStyle.Render(row.label+":")
 		value := row.value
 		if value == "" {
-			value = sidebarLabelStyle.Render(row.placeholder)
+			value = row.placeholder
 		}
 		if active[row.key] {
 			marker = accentStyle.Render("▸ ")
-			label = lipgloss.NewStyle().Bold(true).Render(row.label + ":")
-			if row.value != "" {
-				value = sidebarValueStyle.Render(value)
-			}
 		}
-		blocks = append(blocks, wrap.Render(marker+label+" "+value))
+		blocks = append(blocks, wrap.Render(marker+label+" "+sidebarValueStyle.Render(value)))
 	}
 	lines := strings.Split(lipgloss.JoinVertical(lipgloss.Left, blocks...), "\n")
 	if len(lines) > m.vp.Height {
-		lines = lines[:m.vp.Height]
+		lines = append(lines[:max(0, m.vp.Height-1)], "  … more on Confirm")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -190,6 +221,11 @@ func (m *model) sidebarView() string {
 // formatValue renders an option value for the sidebar.
 func formatValue(v any) string {
 	switch t := v.(type) {
+	case bool:
+		if t {
+			return "Enabled"
+		}
+		return "Disabled"
 	case string:
 		return t
 	case []string:
@@ -256,9 +292,9 @@ func (f *Field) view(focused bool, width int) string {
 		width = 1
 	}
 	wrap := lipgloss.NewStyle().Width(width)
-	title := f.title
+	title := "  " + f.title
 	if focused {
-		title = accentStyle.Render(title)
+		title = accentStyle.Render("▸ ") + headerStyle.Render(f.title)
 	}
 	var b strings.Builder
 	b.WriteString(wrap.Render(title))
@@ -268,7 +304,7 @@ func (f *Field) view(focused bool, width int) string {
 	b.WriteByte('\n')
 	b.WriteString(f.widget.view(focused, width))
 	if f.err != "" {
-		b.WriteString("\n" + wrap.Render(errStyle.Render(f.err)))
+		b.WriteString("\n" + wrap.Render(errStyle.Render("! "+f.err)))
 	}
 	return b.String()
 }

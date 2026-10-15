@@ -31,6 +31,8 @@ func newTextWidget(value, placeholder string, onChange func(string)) *textWidget
 	ti.SetValue(value)
 	ti.Placeholder = placeholder
 	ti.Prompt = ""
+	ti.PlaceholderStyle = lipgloss.NewStyle()
+	ti.Cursor.Style = lipgloss.NewStyle()
 	return &textWidget{input: ti, onChange: onChange}
 }
 
@@ -43,11 +45,18 @@ func (w *textWidget) update(msg tea.KeyMsg) {
 	}
 }
 
-func (w *textWidget) view(_ bool, width int) string {
-	if width > 4 {
-		w.input.Width = width - 4
+func (w *textWidget) view(focused bool, width int) string {
+	w.input.Width = max(1, width-5)
+	if width < 6 {
+		return lipgloss.NewStyle().MaxWidth(max(1, width)).Render(w.input.View())
 	}
-	return w.input.View()
+	color := borderColor
+	if focused {
+		color = accentColor
+	}
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).
+		BorderForeground(color).Padding(0, 1).Width(width - 2).
+		Render(w.input.View())
 }
 
 func (w *textWidget) setFocus(focused bool) {
@@ -70,6 +79,7 @@ type selectWidget struct {
 	values   []string
 	cursor   int
 	onChange func(string)
+	inline   bool // boolean options share one row, with vertical fallback
 }
 
 func newSelectWidget(labels, values []string, current string, onChange func(string)) *selectWidget {
@@ -85,6 +95,16 @@ func newSelectWidget(labels, values []string, current string, onChange func(stri
 
 func (w *selectWidget) update(msg tea.KeyMsg) {
 	switch msg.String() {
+	case "left", "right":
+		if w.inline {
+			if msg.String() == "left" && w.cursor > 0 {
+				w.cursor--
+				w.changed()
+			} else if msg.String() == "right" && w.cursor < len(w.values)-1 {
+				w.cursor++
+				w.changed()
+			}
+		}
 	case "up", "k":
 		if w.cursor > 0 {
 			w.cursor--
@@ -109,19 +129,39 @@ func (w *selectWidget) view(focused bool, width int) string {
 		width = 1
 	}
 	wrap := lipgloss.NewStyle().Width(width)
+	if w.inline {
+		var items []string
+		for i, label := range w.labels {
+			item := "  ○ " + label
+			if i == w.cursor {
+				item = headerStyle.Render("  ● " + label)
+				if focused {
+					item = focusedChoiceStyle.Render("▸ ● " + label + " ")
+				}
+			}
+			items = append(items, item)
+		}
+		line := strings.Join(items, "  ")
+		if lipgloss.Width(line) <= width {
+			return wrap.Render(line)
+		}
+	}
 	var b strings.Builder
 	for i, label := range w.labels {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		line := "  " + label
+		line := "  ○ " + label
+		style := wrap
 		if i == w.cursor {
-			line = "▸ " + label
+			line = "  ● " + label
+			style = wrap.Bold(true)
 			if focused {
-				line = accentStyle.Render(line)
+				line = "▸ ● " + label
+				style = focusedChoiceStyle.Width(width)
 			}
 		}
-		b.WriteString(wrap.Render(line))
+		b.WriteString(style.Render(line))
 	}
 	return b.String()
 }
@@ -185,13 +225,15 @@ func (w *multiWidget) view(focused bool, width int) string {
 			box = "[x]"
 		}
 		line := "  " + fmt.Sprintf("%s %s", box, label)
-		if i == w.cursor {
-			line = "▸ " + fmt.Sprintf("%s %s", box, label)
-			if focused {
-				line = accentStyle.Render(line)
-			}
+		style := wrap
+		if w.selected[i] {
+			style = wrap.Bold(true)
 		}
-		b.WriteString(wrap.Render(line))
+		if i == w.cursor && focused {
+			line = "▸ " + fmt.Sprintf("%s %s", box, label)
+			style = focusedChoiceStyle.Width(width)
+		}
+		b.WriteString(style.Render(line))
 	}
 	return b.String()
 }
