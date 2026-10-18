@@ -113,6 +113,8 @@ when: '"windows-latest" in ci_platforms'    # multichoice 成员（注意 yaml �
 
 `master/main/dev/develop` 共用 `ghcr.io/<小写 github.repository>:dev`，以固定并发组、`cancel-in-progress: false` 避免同时发布；GitHub 默认只保留一个待运行任务。开发镜像固定为 Linux amd64，保留独立的 lint/test 检查，`test.yml` 仍照常生成和运行。
 
+启用任一镜像选项时，README 生成多行 `docker run` 快速开始命令，包含后台运行、容器名、重启策略与 `8080:8080` 端口映射，并提示在浏览器打开 Web 界面。`docker_image=true` 时优先使用 `:latest`，否则使用 `:dev`；镜像仓库名由 `.Repo` 转小写，非 GitHub 模块使用 `<owner>/<repo>` 占位符并提示替换。两个镜像选项均关闭时不生成此章节。
+
 ## 自定义模板
 
 放置于 `~/.config/go-create/templates/<name>/`（全平台统一），结构同上。同名模板覆盖内置模板。`go-create list` 可查看全部模板及来源（builtin/user）。
