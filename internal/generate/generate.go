@@ -95,6 +95,31 @@ func Validate(t *template.Template, p *Params) error {
 
 // Generate runs the generation.
 func Generate(t *template.Template, p Params) (*Result, error) {
+	return GenerateWithProgress(t, p, nil)
+}
+
+// GenerateWithProgress runs generation with an optional synchronous observer.
+// Fatal errors stop the current phase; post-action failures remain warnings.
+func GenerateWithProgress(t *template.Template, p Params, onProgress func(Progress)) (result *Result, err error) {
+	step := StepRender
+	emit := func(status Status, message string, warnings []string) {
+		if onProgress != nil {
+			onProgress(Progress{Step: step, Status: status, Message: message, Warnings: warnings})
+		}
+	}
+	finish := func(message string, warnings []string) {
+		status := Completed
+		if len(warnings) > 0 {
+			status = Warning
+		}
+		emit(status, message, warnings)
+	}
+	defer func() {
+		if err != nil {
+			emit(Failed, err.Error(), nil)
+		}
+	}()
+	emit(Running, "Validating parameters and rendering template", nil)
 	if err := Validate(t, &p); err != nil {
 		return nil, err
 	}
@@ -141,7 +166,11 @@ func Generate(t *template.Template, p Params) (*Result, error) {
 		return nil, err
 	}
 	warnings = append(warnings, renderWarnings...)
+	finish(fmt.Sprintf("Rendered %s (%d files)", t.Name, len(files)), warnings)
 
+	step = StepWrite
+	emit(Running, "Writing project files", nil)
+	writeWarningStart := len(warnings)
 	for _, f := range files {
 		dest := filepath.Join(dir, filepath.FromSlash(f.Path))
 		if _, err := os.Stat(dest); err == nil {
@@ -165,25 +194,46 @@ func Generate(t *template.Template, p Params) (*Result, error) {
 		}
 		files = append(files, template.RenderedFile{Path: "LICENSE"})
 	}
+	finish(fmt.Sprintf("Wrote %d files to %s", len(files), dir), warnings[writeWarningStart:])
 
-	if !p.NoGit {
+	step = StepGit
+	if p.NoGit {
+		emit(Skipped, "Skipped (--no-git)", nil)
+	} else {
+		emit(Running, "Running git init", nil)
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			warnings = append(warnings, "target directory already contains .git; skipping git init")
+			emit(Skipped, "Skipped (existing .git)", nil)
 		} else if err := run(dir, "git", "init"); err != nil {
 			warnings = append(warnings, fmt.Sprintf("git init failed (%v); run it manually", err))
+			emit(Warning, "git init failed", warnings[len(warnings)-1:])
+		} else {
+			emit(Completed, "Initialized .git", nil)
 		}
 	}
-	if !p.NoTidy {
+	step = StepTidy
+	if p.NoTidy {
+		emit(Skipped, "Skipped (--no-tidy)", nil)
+	} else {
+		emit(Running, "Running go mod tidy", nil)
+		attempt := 0
 		// go mod tidy fetches modules over the network; transient proxy/registry
 		// failures are common, so retry with linear backoff before giving up
 		if err := retry(3, 2*time.Second, func() error {
+			attempt++
+			if attempt > 1 {
+				emit(Running, fmt.Sprintf("Retrying go mod tidy (attempt %d/3)", attempt), nil)
+			}
 			return run(dir, "go", "mod", "tidy")
 		}); err != nil {
 			warnings = append(warnings, fmt.Sprintf("go mod tidy failed after retries (%v); cd into %s and run it manually", err, dir))
+			emit(Warning, "go mod tidy failed after 3 attempts", warnings[len(warnings)-1:])
+		} else {
+			emit(Completed, "go mod tidy completed", nil)
 		}
 	}
 
-	result := &Result{Dir: dir, Warnings: warnings}
+	result = &Result{Dir: dir, Warnings: warnings}
 	for _, f := range files {
 		result.Files = append(result.Files, f.Path)
 	}

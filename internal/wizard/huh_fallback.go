@@ -179,15 +179,14 @@ func runHuh(templates []*template.Template, p *generate.Params) (*template.Templ
 // summary renders the current parameter set for the confirmation step.
 func summary(t *template.Template, p *generate.Params, options map[string]any) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Template: %s\nName: %s\nModule: %s\nLicense: %s\n", t.Name, p.Name, p.Module, licenseDisplay(p))
-	// Show the latest option values (binders have committed to p.Options and the summary
-	// is built after commit; merge here: p.Options first, defaults as fallback).
-	for _, o := range t.Options {
-		v, present := p.Options[o.Key]
-		if !present {
-			v = options[o.Key]
+	for i, group := range summaryGroups(t, p, options) {
+		if i > 0 {
+			b.WriteByte('\n')
 		}
-		fmt.Fprintf(&b, "%s: %v\n", o.Prompt, v)
+		fmt.Fprintf(&b, "%s\n", group.title)
+		for _, row := range group.rows {
+			fmt.Fprintf(&b, "%s: %s\n", row.label, formatValue(row.value))
+		}
 	}
 	return b.String()
 }

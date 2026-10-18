@@ -2,7 +2,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -48,14 +47,15 @@ func runWizard(p *generate.Params) (*template.Template, error) {
 
 // runGenerate runs generation and prints the result.
 func runGenerate(cmd *cobra.Command, tmpl *template.Template, p generate.Params) error {
-	res, err := generate.Generate(tmpl, p)
-	if err != nil {
-		return err
-	}
 	out := cmd.OutOrStdout()
-	_, _ = fmt.Fprintf(out, "\nCreated project %s (%d files, directory %s)\n", p.Name, len(res.Files), res.Dir)
-	for _, w := range res.Warnings {
-		_, _ = fmt.Fprintf(out, "warning: %s\n", w)
+	reporter := newGenerationReporter(out, colorOutput(out))
+	_, _ = out.Write([]byte(reporter.accent.Render("Creating "+p.Name+" · "+tmpl.Name) + "\n\n"))
+	res, err := generate.GenerateWithProgress(tmpl, p, reporter.update)
+	reporter.finish(p.Name, res, err)
+	if err != nil {
+		// The failed phase and its cause have already been printed above.
+		cmd.SilenceErrors = true
+		return err
 	}
 	return nil
 }

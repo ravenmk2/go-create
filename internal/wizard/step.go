@@ -42,6 +42,7 @@ type Step struct {
 	title  string
 	fields []*Field
 	body   func() string // optional static content rendered above the fields
+	review bool          // full-width summary with pinned confirmation actions
 }
 
 // visibleFields returns the fields currently shown (dynamic visibility, e.g.
@@ -322,9 +323,11 @@ func confirmStep(tmpl *template.Template, p *generate.Params, current map[string
 	*confirmed = true // the cursor starts on Create
 	w := newSelectWidget([]string{"Create project", "Cancel"}, []string{"create", "cancel"}, "create",
 		func(v string) { *confirmed = v == "create" })
+	w.inline = true
 	return &Step{
-		title: "Confirm",
-		body:  func() string { return summary(tmpl, p, current) },
+		title:  "Confirm",
+		review: true,
+		body:   func() string { return summary(tmpl, p, current) },
 		fields: []*Field{{
 			kind:   kindSelect,
 			title:  "Create project?",

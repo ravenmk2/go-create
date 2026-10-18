@@ -127,7 +127,7 @@ func TestSidebarHierarchy(t *testing.T) {
 	if strings.Contains(v, "▸ Name:") {
 		t.Fatal("Name row must not be active on the template step")
 	}
-	if !strings.Contains(v, "Name: <required>") || !strings.Contains(v, "Module: <required>") {
+	if !regexp.MustCompile(`Name:\s+<required>`).MatchString(v) || !regexp.MustCompile(`Module:\s+<required>`).MatchString(v) {
 		t.Fatal("empty required values must show the <required> placeholder")
 	}
 
@@ -136,12 +136,12 @@ func TestSidebarHierarchy(t *testing.T) {
 	if strings.Contains(v, "▸ Template:") {
 		t.Fatal("Template row must not stay active after leaving its step")
 	}
-	if !strings.Contains(v, "▸ Name:") || !strings.Contains(v, "▸ Module:") {
-		t.Fatal("Name and Module rows must be active on the project step")
+	if !strings.Contains(v, "▸ Name:") || strings.Contains(v, "▸ Module:") {
+		t.Fatal("only the focused field should carry the active marker")
 	}
 
 	// The committed template stays visible as a plain (inactive) value.
-	if !strings.Contains(v, "Template: cli") {
+	if !regexp.MustCompile(`Template:\s+cli`).MatchString(v) {
 		t.Fatal("committed template value must remain in the sidebar")
 	}
 }
@@ -209,13 +209,13 @@ func TestResponsiveSummary(t *testing.T) {
 			m.stepIdx = i
 		}
 	}
-	send(m, tea.WindowSizeMsg{Width: 96, Height: 20})
+	send(m, tea.WindowSizeMsg{Width: 104, Height: 20})
 	v := stripANSI(m.View())
-	if !strings.Contains(v, "Development image:") {
+	if !strings.Contains(v, "Dev image:") {
 		t.Fatal("current release options must stay visible even in a short sidebar")
 	}
-	if !strings.Contains(v, "more on Confirm") {
-		t.Fatal("a clipped summary must tell users where to read the rest")
+	if !strings.Contains(v, "on Confirm") {
+		t.Fatal("the summary must tell users where to read the full configuration")
 	}
 	send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	v = stripANSI(m.View())
