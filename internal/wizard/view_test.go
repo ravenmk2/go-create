@@ -146,9 +146,8 @@ func TestSidebarHierarchy(t *testing.T) {
 	}
 }
 
-// TestSidebarHighlightsOptionRows checks that option rows are marked active on
-// their own option page.
-func TestSidebarHighlightsOptionRows(t *testing.T) {
+// The sidebar explains the focused field without duplicating its controls.
+func TestSidebarExplainsFocusedOption(t *testing.T) {
 	p := &generate.Params{Template: "web", Name: "demo", Module: "example.com/demo", License: "none"}
 	m := newModel(testTemplates(), p)
 	send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -157,8 +156,8 @@ func TestSidebarHighlightsOptionRows(t *testing.T) {
 		t.Fatalf("current step = %q, want Options", got)
 	}
 	v := stripANSI(m.sidebarView())
-	if !strings.Contains(v, "▸ Feature:") {
-		t.Fatal("option rows must be marked active on their option page")
+	if !strings.Contains(v, "About this setting") || !strings.Contains(v, "Feature") || strings.Contains(v, "▸ Feature:") {
+		t.Fatal("sidebar must explain the active field without a second selected row")
 	}
 	if strings.Contains(v, "▸ Name:") {
 		t.Fatal("common rows must not be active on an option page")
@@ -175,6 +174,8 @@ func TestWebStepsFitAfterResize(t *testing.T) {
 	m := newModel([]*template.Template{tmpl}, &generate.Params{})
 	for _, size := range []tea.WindowSizeMsg{
 		{Width: 180, Height: 48},
+		{Width: 116, Height: 32},
+		{Width: 104, Height: 20},
 		{Width: 96, Height: 24},
 		{Width: 80, Height: 24},
 		{Width: 72, Height: 20},
@@ -211,11 +212,11 @@ func TestResponsiveSummary(t *testing.T) {
 	}
 	send(m, tea.WindowSizeMsg{Width: 104, Height: 20})
 	v := stripANSI(m.View())
-	if !strings.Contains(v, "Dev image:") {
-		t.Fatal("current release options must stay visible even in a short sidebar")
+	if !strings.Contains(v, "About this setting") || !strings.Contains(v, ".goreleaser.yml") {
+		t.Fatal("short sidebar must show the focused setting's impact")
 	}
-	if !strings.Contains(v, "on Confirm") {
-		t.Fatal("the summary must tell users where to read the full configuration")
+	if strings.Contains(v, "Dev image:") {
+		t.Fatal("sidebar must not duplicate option rows")
 	}
 	send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	v = stripANSI(m.View())

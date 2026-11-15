@@ -112,6 +112,20 @@ func (m *model) confirmationView(width int) string {
 	labelWidth = min(labelWidth, 22)
 	stacked := width < labelWidth+24
 	var sections []string
+	if m.previewErr != nil {
+		sections = append(sections, lipgloss.NewStyle().Width(width).Render(errStyle.Render("! "+m.previewErr.Error()+"\nPress E to edit settings.")))
+	} else if m.preview != nil {
+		title := "Ready to create"
+		if m.p.DryRun {
+			title = "Preview only — no files will be written"
+		}
+		style := helpStyle
+		if len(m.preview.Overwrites()) > 0 && !m.p.DryRun {
+			title = "Existing files will be overwritten"
+			style = errStyle
+		}
+		sections = append(sections, lipgloss.NewStyle().Width(width).Render(headerStyle.Render(title)+"\n"+style.Render(m.preview.Summary())))
+	}
 	for _, group := range groups {
 		lines := []string{lipgloss.NewStyle().Width(width).Render(accentStyle.Render(group.title))}
 		for _, row := range group.rows {

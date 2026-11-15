@@ -2,6 +2,7 @@ package wizard
 
 import (
 	"errors"
+	"strconv"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -21,10 +22,14 @@ type model struct {
 	stepIdx  int
 	fieldIdx int // index into the current step's visible fields
 
-	tmpl      *template.Template // selected template
-	options   map[string]any     // coerced option values (prefill and summary fallback)
-	builtFor  string             // template name the tail steps were built for
-	confirmed bool               // final Create/Cancel choice
+	tmpl       *template.Template // selected template
+	options    map[string]any     // coerced option values (prefill and summary fallback)
+	builtFor   string             // template name the tail steps were built for
+	confirmed  bool               // final Create/Cancel choice
+	preview    *generate.Plan
+	previewErr error
+	editMenu   *selectWidget
+	editReturn bool
 
 	width  int
 	height int
@@ -71,6 +76,9 @@ func newModel(templates []*template.Template, p *generate.Params) *model {
 		p.Template = templates[0].Name
 	}
 	m.syncTail()
+	if m.reviewing() {
+		m.enterReview()
+	}
 	m.focus()
 	return m
 }
@@ -85,24 +93,61 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		return m, nil
 	case tea.KeyMsg:
+		if m.editMenu != nil {
+			switch msg.String() {
+			case "ctrl+c":
+				m.canceled = true
+				return m, tea.Quit
+			case "esc", "e", "E":
+				m.editMenu = nil
+				m.vp.GotoTop()
+				return m, nil
+			case "enter":
+				i, _ := strconv.Atoi(m.editMenu.value())
+				m.editMenu = nil
+				m.stepIdx, m.fieldIdx, m.editReturn = i, 0, true
+				m.preview = nil
+				m.vp.GotoTop()
+				m.focus()
+				return m, nil
+			default:
+				m.editMenu.update(msg)
+				return m, nil
+			}
+		}
+		if m.reviewing() && (msg.String() == "e" || msg.String() == "E") {
+			// Values supplied on the command line are skipped initially, but
+			// remain editable from the review page.
+			head := []*Step{templateSelectStep(m.templates, m.p), commonStep(m.p, true), licenseStep(m.p, true)}
+			m.steps = append(head, m.steps[m.headLen:]...)
+			m.headLen = len(head)
+			m.stepIdx = len(m.steps) - 1
+			var labels, values []string
+			for i, step := range m.steps[:len(m.steps)-1] {
+				labels = append(labels, step.title)
+				values = append(values, strconv.Itoa(i))
+			}
+			if len(labels) > 0 {
+				m.editMenu = newSelectWidget(labels, values, "0", nil)
+				m.vp.GotoTop()
+			}
+			return m, nil
+		}
 		switch msg.String() {
 		case "ctrl+c", "esc":
 			m.canceled = true
 			return m, tea.Quit
 		case "enter":
 			return m, m.advance()
+		case "tab":
+			// Tab navigates fields but never submits the final confirmation.
+			if !m.reviewing() {
+				return m, m.advance()
+			}
+			return m, nil
 		case "shift+tab":
 			m.back()
 			return m, nil
-		case "up", "down":
-			// Text inputs ignore arrows; use them as field navigation instead.
-			if f := m.curField(); f != nil && f.kind == kindInput {
-				if msg.String() == "up" {
-					m.back()
-					return m, nil
-				}
-				return m, m.advance()
-			}
 		case "pgup", "pgdown":
 			var cmd tea.Cmd
 			m.vp, cmd = m.vp.Update(msg)
@@ -128,6 +173,20 @@ func (m *model) advance() tea.Cmd {
 	if f == nil {
 		return nil
 	}
+	if m.reviewing() && m.confirmed {
+		// Refresh once on submit, so conflicts that appeared while reviewing
+		// are shown for another explicit confirmation rather than overwritten.
+		previous := m.preview
+		m.prepareReview()
+		if m.previewErr != nil {
+			return nil
+		}
+		if previous != nil && !sameOverwrites(previous, m.preview) {
+			m.confirmed = false
+			f.widget.(*selectWidget).cursor = 1
+			return nil
+		}
+	}
 	if f.validate != nil {
 		if errText := f.validate(); errText != "" {
 			f.err = errText
@@ -149,6 +208,10 @@ func (m *model) advance() tea.Cmd {
 		return nil
 	}
 	next := m.stepIdx + 1
+	if m.editReturn && !m.reviewing() {
+		next = len(m.steps) - 1
+		m.editReturn = false
+	}
 	for next < len(m.steps) && len(m.steps[next].visibleFields()) == 0 {
 		next++
 	}
@@ -157,10 +220,39 @@ func (m *model) advance() tea.Cmd {
 		m.fieldIdx = 0
 		m.vp.GotoTop()
 		m.focus()
+		if m.reviewing() {
+			m.enterReview()
+		}
 		return nil
 	}
 	m.done = true
 	return tea.Quit
+}
+
+func (m *model) prepareReview() {
+	m.preview, m.previewErr = generate.Preview(m.tmpl, *m.p)
+}
+
+func (m *model) enterReview() {
+	m.prepareReview()
+	// Overwriting starts on Cancel; the user must explicitly choose the action.
+	if m.preview != nil && len(m.preview.Overwrites()) > 0 && !m.p.DryRun {
+		w := m.steps[len(m.steps)-1].fields[0].widget.(*selectWidget)
+		w.cursor, m.confirmed = 1, false
+	}
+}
+
+func sameOverwrites(a, b *generate.Plan) bool {
+	x, y := a.Overwrites(), b.Overwrites()
+	if len(x) != len(y) {
+		return false
+	}
+	for i := range x {
+		if x[i] != y[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // back moves to the previous visible field or step; committed values stay.
@@ -246,16 +338,4 @@ func (m *model) focus() {
 			f.widget.setFocus(f == focused)
 		}
 	}
-}
-
-// activeSummaryKeys returns the sidebar row keys owned by the current step's
-// visible fields; the sidebar highlights these rows.
-func (m *model) activeSummaryKeys() map[string]bool {
-	keys := map[string]bool{}
-	for _, f := range m.curFields() {
-		if f.summaryKey != "" {
-			keys[f.summaryKey] = true
-		}
-	}
-	return keys
 }

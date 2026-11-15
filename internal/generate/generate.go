@@ -26,6 +26,7 @@ type Params struct {
 	Options  map[string]any
 	NoGit    bool
 	NoTidy   bool
+	DryRun   bool // preview only; also changes wizard confirmation wording
 }
 
 // Result is the generation result.
@@ -37,6 +38,25 @@ type Result struct {
 
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 var moduleRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(\.[A-Za-z0-9_-]+)*(/[A-Za-z0-9._-]+)+$`)
+
+// ValidateName is shared by generation and interactive field validation.
+func ValidateName(name string) error {
+	if !nameRE.MatchString(name) {
+		return fmt.Errorf("invalid project name %q (must start with an alphanumeric character; may contain letters, digits, ., -, _)", name)
+	}
+	if PkgName(name) == "" {
+		return fmt.Errorf("project name %q cannot be converted into a valid Go package name", name)
+	}
+	return nil
+}
+
+// ValidateModule is shared by generation and interactive field validation.
+func ValidateModule(module string) error {
+	if !moduleRE.MatchString(module) {
+		return fmt.Errorf("invalid module path %q (e.g. github.com/user/project)", module)
+	}
+	return nil
+}
 
 // PkgName strips punctuation and lowercases a project name. It returns an
 // empty string if the result cannot be used as a Go package identifier.
@@ -76,16 +96,13 @@ func Validate(t *template.Template, p *Params) error {
 	var missing []string
 	if p.Name == "" {
 		missing = append(missing, "project name (positional argument)")
-	} else if !nameRE.MatchString(p.Name) {
-		return fmt.Errorf("invalid project name %q (must start with an alphanumeric character; may contain letters, digits, ., -, _)", p.Name)
-	}
-	if p.Name != "" && PkgName(p.Name) == "" {
-		return fmt.Errorf("project name %q cannot be converted into a valid Go package name", p.Name)
+	} else if err := ValidateName(p.Name); err != nil {
+		return err
 	}
 	if p.Module == "" {
 		missing = append(missing, "--module (module path, e.g. github.com/user/project)")
-	} else if !moduleRE.MatchString(p.Module) {
-		return fmt.Errorf("invalid module path %q", p.Module)
+	} else if err := ValidateModule(p.Module); err != nil {
+		return err
 	}
 	if !ValidLicense(p.License) {
 		return fmt.Errorf("unsupported license %q (choose from %v or none)", p.License, LicenseIDs())
@@ -126,52 +143,26 @@ func GenerateWithProgress(t *template.Template, p Params, onProgress func(Progre
 		}
 	}()
 	emit(Running, "Validating parameters and rendering template", nil)
-	if err := Validate(t, &p); err != nil {
-		return nil, err
-	}
-	options, err := t.CoerceOptions(p.Options)
-	if err != nil {
-		return nil, err
-	}
-
-	dir := p.Dir
-	if dir == "" {
-		dir = p.Name
-	}
-
-	repo := RepoSlug(p.Module)
-	var warnings []string
-	if repo == "" {
-		warnings = append(warnings, "module path is not of the form github.com/<owner>/<repo>; README badge and GHCR image name content is generated in a generic form")
-	}
-	if v, ok := options["docker_image"]; ok && v == true && repo == "" {
-		warnings = append(warnings, "docker_image derives the GHCR image name from the GitHub repository path, which cannot be derived from the current module path; fix .goreleaser.yml manually after generation")
-	}
-	for _, o := range t.Options {
-		if o.Type == template.OptionMultiChoice {
-			if list, ok := options[o.Key].([]string); ok && len(list) == 0 {
-				warnings = append(warnings, fmt.Sprintf("option %s is empty; related matrix/list content will be empty", o.Key))
-			}
+	if p.DryRun {
+		plan, err := Preview(t, p)
+		if err != nil {
+			return nil, err
 		}
+		finish(fmt.Sprintf("Previewed %s (%d files)", t.Name, len(plan.Files)), plan.Warnings)
+		for _, skipped := range []Step{StepWrite, StepGit, StepTidy} {
+			step = skipped
+			emit(Skipped, "Skipped (--dry-run)", nil)
+		}
+		result = &Result{Dir: plan.Dir, Warnings: plan.Warnings}
+		for _, f := range plan.Files {
+			result.Files = append(result.Files, f.Path)
+		}
+		return result, nil
 	}
-
-	ctx := &template.Context{
-		Name:            p.Name,
-		Module:          p.Module,
-		Repo:            repo,
-		PkgName:         PkgName(p.Name),
-		GoVersion:       GoVersion(),
-		License:         normalizeLicense(p.License),
-		CopyrightHolder: p.Holder,
-		Year:            time.Now().Year(),
-		Options:         options,
-	}
-
-	files, renderWarnings, err := t.Render(ctx)
+	dir, files, warnings, err := renderProject(t, p)
 	if err != nil {
 		return nil, err
 	}
-	warnings = append(warnings, renderWarnings...)
 	finish(fmt.Sprintf("Rendered %s (%d files)", t.Name, len(files)), warnings)
 
 	step = StepWrite
@@ -198,16 +189,6 @@ func GenerateWithProgress(t *template.Template, p Params, onProgress func(Progre
 		}
 	}
 
-	if ctx.License != "" {
-		text, err := LicenseText(ctx.License, p.Holder, ctx.Year)
-		if err != nil {
-			return nil, err
-		}
-		if err := root.WriteFile("LICENSE", []byte(text), 0o644); err != nil {
-			return nil, err
-		}
-		files = append(files, template.RenderedFile{Path: "LICENSE"})
-	}
 	finish(fmt.Sprintf("Wrote %d files to %s", len(files), dir), warnings[writeWarningStart:])
 
 	step = StepGit
@@ -252,6 +233,63 @@ func GenerateWithProgress(t *template.Template, p Params, onProgress func(Progre
 		result.Files = append(result.Files, f.Path)
 	}
 	return result, nil
+}
+
+func renderProject(t *template.Template, p Params) (string, []template.RenderedFile, []string, error) {
+	if err := Validate(t, &p); err != nil {
+		return "", nil, nil, err
+	}
+	options, err := t.CoerceOptions(p.Options)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	dir := p.Dir
+	if dir == "" {
+		dir = p.Name
+	}
+
+	repo := RepoSlug(p.Module)
+	var warnings []string
+	if repo == "" {
+		warnings = append(warnings, "module path is not of the form github.com/<owner>/<repo>; README badge and GHCR image name content is generated in a generic form")
+	}
+	if v, ok := options["docker_image"]; ok && v == true && repo == "" {
+		warnings = append(warnings, "docker_image derives the GHCR image name from the GitHub repository path, which cannot be derived from the current module path; fix .goreleaser.yml manually after generation")
+	}
+	for _, o := range t.Options {
+		if o.Type == template.OptionMultiChoice {
+			if list, ok := options[o.Key].([]string); ok && len(list) == 0 {
+				warnings = append(warnings, fmt.Sprintf("option %s is empty; related matrix/list content will be empty", o.Key))
+			}
+		}
+	}
+
+	ctx := &template.Context{
+		Name:            p.Name,
+		Module:          p.Module,
+		Repo:            repo,
+		PkgName:         PkgName(p.Name),
+		GoVersion:       GoVersion(),
+		License:         normalizeLicense(p.License),
+		CopyrightHolder: p.Holder,
+		Year:            time.Now().Year(),
+		Options:         options,
+	}
+
+	files, renderWarnings, err := t.Render(ctx)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	warnings = append(warnings, renderWarnings...)
+	if ctx.License != "" {
+		text, err := LicenseText(ctx.License, p.Holder, ctx.Year)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		files = append(files, template.RenderedFile{Path: "LICENSE", Data: []byte(text), Mode: 0o644})
+	}
+	return dir, files, warnings, nil
 }
 
 func normalizeLicense(id string) string {

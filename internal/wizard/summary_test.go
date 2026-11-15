@@ -25,14 +25,12 @@ func TestSidebarLongValuesRemainSingleLine(t *testing.T) {
 		t.Fatalf("long values should be abbreviated: %s", view)
 	}
 	assertFits(t, view, sidebarWidth, m.vp.Height)
-	if strings.Count(view, "Desc:") != 1 || strings.Contains(view, "Features") {
-		t.Fatal("sidebar should contain only project rows and the current page")
+	if strings.Contains(view, "Desc:") || !strings.Contains(view, "Friendly display name") {
+		t.Fatal("sidebar should explain the focused setting instead of repeating option values")
 	}
-	// Row positions must remain stable when focus changes within this page.
-	before := len(strings.Split(view, "\n"))
 	send(m, key("enter"))
-	if got := lipgloss.Height(m.sidebarView()); got != before {
-		t.Fatalf("sidebar height changed on focus movement: %d -> %d", before, got)
+	if got := m.sidebarView(); !strings.Contains(got, "one-line description") {
+		t.Fatal("sidebar explanation must follow focus")
 	}
 }
 

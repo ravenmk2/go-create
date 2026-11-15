@@ -17,6 +17,7 @@ func Execute(version string) {
 		Use:          "go-create",
 		Short:        "Bootstrap Go projects per engineering conventions",
 		Version:      version,
+		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			p := generate.Params{}
@@ -24,13 +25,10 @@ func Execute(version string) {
 			if err != nil {
 				return err
 			}
-			if err := confirmNonEmptyDir(&p); err != nil {
-				return err
-			}
 			return runGenerate(cmd, tmpl, p)
 		},
 	}
-	root.AddCommand(newCmd(), listCmd(), upgradeCmd(version))
+	root.AddCommand(newCmd(), listCmd(), showCmd(), upgradeCmd(version))
 	if err := root.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -47,10 +45,22 @@ func runWizard(p *generate.Params) (*template.Template, error) {
 
 // runGenerate runs generation and prints the result.
 func runGenerate(cmd *cobra.Command, tmpl *template.Template, p generate.Params) error {
+	if p.DryRun {
+		return runPreview(cmd, tmpl, p)
+	}
 	out := cmd.OutOrStdout()
 	reporter := newGenerationReporter(out, colorOutput(out))
+	activity := &generationActivity{out: out, enabled: colorOutput(out)}
+	defer activity.stop()
 	_, _ = out.Write([]byte(reporter.accent.Render("Creating "+p.Name+" · "+tmpl.Name) + "\n\n"))
-	res, err := generate.GenerateWithProgress(tmpl, p, reporter.update)
+	res, err := generate.GenerateWithProgress(tmpl, p, func(event generate.Progress) {
+		activity.stop()
+		reporter.update(event)
+		if event.Status == generate.Running {
+			activity.start()
+		}
+	})
+	activity.stop()
 	reporter.finish(p.Name, res, err)
 	if err != nil {
 		// The failed phase and its cause have already been printed above.

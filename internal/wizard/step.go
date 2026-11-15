@@ -23,15 +23,16 @@ const (
 // through its widget, validates on submit, and commits its value into the
 // bound parameter.
 type Field struct {
-	kind       fieldKind
-	title      string
-	help       string
-	summaryKey string // sidebar row this field maps to ("" = none)
-	widget     widget
-	commit     func()        // writes the widget value into the bound parameter
-	validate   func() string // "" when valid
-	visible    func() bool   // nil means always visible
-	err        string        // latest validation error, shown under the field
+	kind        fieldKind
+	title       string
+	help        string
+	summaryKey  string // sidebar row this field maps to ("" = none)
+	widget      widget
+	commit      func()        // writes the widget value into the bound parameter
+	validate    func() string // "" when valid
+	visible     func() bool   // nil means always visible
+	err         string        // latest validation error, shown under the field
+	compactBool bool          // render a short boolean title beside its control
 }
 
 func (f *Field) isVisible() bool { return f.visible == nil || f.visible() }
@@ -132,9 +133,10 @@ func templateSelectStep(templates []*template.Template, p *generate.Params) *Ste
 }
 
 // commonStep asks for project name and module path (only those not preset).
-func commonStep(p *generate.Params) *Step {
+func commonStep(p *generate.Params, editAll ...bool) *Step {
+	all := len(editAll) > 0 && editAll[0]
 	var fields []*Field
-	if p.Name == "" {
+	if p.Name == "" || all {
 		w := newTextWidget(p.Name, "", func(v string) { p.Name = v })
 		fields = append(fields, &Field{
 			kind:       kindInput,
@@ -144,14 +146,14 @@ func commonStep(p *generate.Params) *Step {
 			widget:     w,
 			commit:     func() { p.Name = w.value() },
 			validate: func() string {
-				if generate.PkgName(w.value()) == "" {
-					return fmt.Sprintf("%q cannot be converted into a valid Go package name", w.value())
+				if err := generate.ValidateName(w.value()); err != nil {
+					return err.Error()
 				}
 				return ""
 			},
 		})
 	}
-	if p.Module == "" {
+	if p.Module == "" || all {
 		w := newTextWidget(p.Module, "github.com/user/project", func(v string) { p.Module = v })
 		fields = append(fields, &Field{
 			kind:       kindInput,
@@ -160,8 +162,8 @@ func commonStep(p *generate.Params) *Step {
 			widget:     w,
 			commit:     func() { p.Module = w.value() },
 			validate: func() string {
-				if !strings.Contains(w.value(), "/") {
-					return "module path must contain / (e.g. github.com/user/project)"
+				if err := generate.ValidateModule(w.value()); err != nil {
+					return err.Error()
 				}
 				return ""
 			},
@@ -175,8 +177,9 @@ func commonStep(p *generate.Params) *Step {
 
 // licenseStep asks for the license, with the copyright holder as a conditional
 // field on the same page. A preset license only needs the holder follow-up.
-func licenseStep(p *generate.Params) *Step {
-	if p.License != "" {
+func licenseStep(p *generate.Params, editAll ...bool) *Step {
+	all := len(editAll) > 0 && editAll[0]
+	if p.License != "" && !all {
 		if p.License != "none" && p.Holder == "" {
 			return holderStep(p)
 		}
@@ -184,8 +187,8 @@ func licenseStep(p *generate.Params) *Step {
 	}
 
 	var holder *Field
-	if p.Holder == "" {
-		w := newTextWidget("", "", func(v string) { p.Holder = v })
+	if p.Holder == "" || all {
+		w := newTextWidget(p.Holder, "", func(v string) { p.Holder = v })
 		holder = &Field{
 			kind:       kindInput,
 			title:      "License copyright holder",
@@ -265,8 +268,9 @@ func optionField(o template.Option, p *generate.Params, current any) *Field {
 	f := &Field{title: o.Prompt, help: o.Help, summaryKey: o.Key}
 	switch o.Type {
 	case template.OptionBoolean:
+		f.compactBool = true
 		v, _ := current.(bool)
-		w := newSelectWidget([]string{"Enabled", "Disabled"}, []string{"true", "false"}, strconv.FormatBool(v),
+		w := newSelectWidget([]string{"On", "Off"}, []string{"true", "false"}, strconv.FormatBool(v),
 			func(s string) { p.Options[o.Key] = s == "true" })
 		w.inline = true
 		f.kind = kindSelect

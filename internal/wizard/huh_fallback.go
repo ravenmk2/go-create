@@ -37,24 +37,14 @@ func runHuh(templates []*template.Template, p *generate.Params) (*template.Templ
 		common = append(common, huh.NewInput().
 			Title("Project name (directory / binary name)").
 			Value(&p.Name).
-			Validate(func(s string) error {
-				if generate.PkgName(s) == "" {
-					return fmt.Errorf("%q cannot be converted into a valid Go package name", s)
-				}
-				return nil
-			}))
+			Validate(generate.ValidateName))
 	}
 	if p.Module == "" {
 		common = append(common, huh.NewInput().
 			Title("Module path").
 			Placeholder("github.com/user/project").
 			Value(&p.Module).
-			Validate(func(s string) error {
-				if !strings.Contains(s, "/") {
-					return errors.New("module path must contain / (e.g. github.com/user/project)")
-				}
-				return nil
-			}))
+			Validate(generate.ValidateModule))
 	}
 	if len(common) > 0 {
 		if err := huh.NewForm(huh.NewGroup(common...)).WithAccessible(true).Run(); err != nil {
@@ -153,11 +143,22 @@ func runHuh(templates []*template.Template, p *generate.Params) (*template.Templ
 	}
 
 	// 5. Summary confirmation
+	plan, err := generate.Preview(tmpl, *p)
+	if err != nil {
+		return nil, err
+	}
+	action, question := "Create", "Create project?"
+	if len(plan.Overwrites()) > 0 {
+		action, question = "Overwrite and create", "Overwrite the listed files and create project?"
+	}
+	if p.DryRun {
+		action, question = "Preview", "Preview project without writing files?"
+	}
 	var ok bool
 	if err := huh.NewForm(huh.NewGroup(
 		huh.NewConfirm().
-			Title(fmt.Sprintf("Create project?\n\n%s", summary(tmpl, p, current))).
-			Affirmative("Create").
+			Title(fmt.Sprintf("%s\n\n%s\n%s", question, plan.Summary(), summary(tmpl, p, current))).
+			Affirmative(action).
 			Negative("Cancel").
 			Value(&ok),
 	)).WithAccessible(true).Run(); err != nil {
