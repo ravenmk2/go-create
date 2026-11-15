@@ -16,6 +16,8 @@ import (
 type generationReporter struct {
 	out      io.Writer
 	accent   lipgloss.Style
+	heading  lipgloss.Style
+	body     lipgloss.Style
 	success  lipgloss.Style
 	warning  lipgloss.Style
 	failure  lipgloss.Style
@@ -45,15 +47,19 @@ func newGenerationReporter(out io.Writer, color bool) *generationReporter {
 	}
 	return &generationReporter{
 		out: out, seen: map[generate.Step]bool{}, states: map[generate.Step]generate.Status{},
-		accent: style("#367478", "#91C6C9"), success: style("#216643", "#8ED3AE"),
-		warning: style("#80591B", "#EDC57D"), failure: style("#AD3838", "#F09B99"),
+		accent:  style("#007A8A", "#22D3EE").Bold(true),
+		heading: style("#0F172A", "#F8FAFC").Bold(true),
+		body:    style("#334155", "#E2E8F0"),
+		success: style("#15803D", "#4ADE80"),
+		warning: style("#92400E", "#FDE047"),
+		failure: style("#BE123C", "#FB7185"),
 	}
 }
 
 func (r *generationReporter) update(event generate.Progress) {
 	first := !r.seen[event.Step]
 	if first {
-		_, _ = fmt.Fprintf(r.out, "%s %s\n", r.accent.Render(fmt.Sprintf("[%d/%d]", event.Step, generate.StepCount)), event.Step)
+		_, _ = fmt.Fprintf(r.out, "%s %s\n", r.accent.Render(fmt.Sprintf("[%d/%d]", event.Step, generate.StepCount)), r.heading.Render(event.Step.String()))
 		r.seen[event.Step] = true
 	}
 	r.states[event.Step] = event.Status
@@ -67,7 +73,7 @@ func (r *generationReporter) update(event generate.Progress) {
 	case generate.Completed:
 		mark, style = "✓", r.success
 	case generate.Skipped:
-		mark = "–"
+		mark, style = "–", r.body
 	case generate.Warning:
 		mark, style = "!", r.warning
 	case generate.Failed:
@@ -83,15 +89,15 @@ func (r *generationReporter) update(event generate.Progress) {
 
 func (r *generationReporter) finish(name string, result *generate.Result, err error) {
 	if err != nil {
-		_, _ = fmt.Fprintf(r.out, "\n%s\n", r.failure.Render("✗ Generation failed at "+r.failed.String()))
+		_, _ = fmt.Fprintf(r.out, "\n%s\n", r.failure.Bold(true).Render("✗ Generation failed at "+r.failed.String()))
 		if r.failed == generate.StepWrite {
-			_, _ = fmt.Fprintln(r.out, "Some files may have been written. Check the error above before retrying.")
+			_, _ = fmt.Fprintln(r.out, r.body.Render("Some files may have been written. Check the error above before retrying."))
 		}
 		return
 	}
-	status := r.success.Render("✓ Project created")
+	status := r.success.Bold(true).Render("✓ Project created")
 	if r.warnings > 0 {
-		status = r.warning.Render(fmt.Sprintf("! Project created with %d warning(s)", r.warnings))
+		status = r.warning.Bold(true).Render(fmt.Sprintf("! Project created with %d warning(s)", r.warnings))
 	}
 	completed, skipped, warned := 0, 0, 0
 	for _, state := range r.states {
@@ -108,9 +114,10 @@ func (r *generationReporter) finish(name string, result *generate.Result, err er
 	if warned > 0 {
 		counts += fmt.Sprintf(" · %d with warnings", warned)
 	}
-	_, _ = fmt.Fprintf(r.out, "\n%s\n%s · %d files · %s\nDirectory: %s\n",
-		status, name, len(result.Files), counts, r.accent.Render(result.Dir))
-	_, _ = fmt.Fprintf(r.out, "\nNext steps:\n  cd %s\n", shellDirectory(result.Dir))
+	_, _ = fmt.Fprintf(r.out, "\n%s\n%s\n%s %s\n",
+		status, r.body.Render(fmt.Sprintf("%s · %d files · %s", name, len(result.Files), counts)),
+		r.heading.Render("Directory:"), r.accent.Render(result.Dir))
+	_, _ = fmt.Fprintf(r.out, "\n%s\n%s\n", r.heading.Render("Next steps:"), r.accent.Render("  cd "+shellDirectory(result.Dir)))
 	if r.states[generate.StepGit] == generate.Warning {
 		_, _ = fmt.Fprintln(r.out, r.accent.Render("  git init"))
 	}
