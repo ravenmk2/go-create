@@ -3,7 +3,6 @@ package wizard
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -123,13 +122,7 @@ func runHuh(templates []*template.Template, p *generate.Params) (*template.Templ
 			binders = append(binders, binder{o.Key, func() { p.Options[o.Key] = v }})
 			field := huh.NewInput().Title(o.Prompt).Description(o.Help).Value(&v)
 			if o.Pattern != "" {
-				re := regexp.MustCompile(o.Pattern)
-				field.Validate(func(s string) error {
-					if s != "" && !re.MatchString(s) {
-						return fmt.Errorf("must match %s", o.Pattern)
-					}
-					return nil
-				})
+				field.Validate(o.ValidateString)
 			}
 			optFields = append(optFields, field)
 		case template.OptionChoice:

@@ -21,6 +21,12 @@ func platformReplace(newBinary, target string) (string, error) {
 		_ = os.Remove(tmpName)
 		return "", err
 	}
+	// CreateTemp uses 0600; copyFile's create mode does not change an
+	// existing file's permissions. Set the mode before replacing target.
+	if err := os.Chmod(tmpName, 0o755); err != nil {
+		_ = os.Remove(tmpName)
+		return "", err
+	}
 	if err := os.Rename(tmpName, target); err != nil {
 		_ = os.Remove(tmpName)
 		return "", err

@@ -47,6 +47,22 @@ type Option struct {
 	Pattern string     `yaml:"pattern"` // regex validation for the input
 }
 
+// ValidateString checks the pattern for a non-empty string. Empty strings
+// remain optional, consistently across defaults, CLI input and both wizards.
+func (o Option) ValidateString(value string) error {
+	if o.Pattern == "" || value == "" {
+		return nil
+	}
+	re, err := regexp.Compile(o.Pattern)
+	if err != nil {
+		return fmt.Errorf("pattern is not a valid regex: %w", err)
+	}
+	if !re.MatchString(value) {
+		return fmt.Errorf("must match %s", o.Pattern)
+	}
+	return nil
+}
+
 // FileEntry is one mapping in the output file manifest.
 type FileEntry struct {
 	Src    string `yaml:"src"`    // source file path relative to files/
@@ -326,6 +342,9 @@ func (t *Template) coerceValue(o Option, v any) (any, error) {
 		s, ok := v.(string)
 		if !ok {
 			return nil, fmt.Errorf("value %v is not a string", v)
+		}
+		if err := o.ValidateString(s); err != nil {
+			return nil, err
 		}
 		return s, nil
 	case OptionChoice:

@@ -3,6 +3,7 @@ package generate
 
 import (
 	"fmt"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -37,7 +38,8 @@ type Result struct {
 var nameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
 var moduleRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*(\.[A-Za-z0-9_-]+)*(/[A-Za-z0-9._-]+)+$`)
 
-// PkgName sanitizes a project name into a valid Go identifier (strips hyphens and other invalid characters).
+// PkgName strips punctuation and lowercases a project name. It returns an
+// empty string if the result cannot be used as a Go package identifier.
 func PkgName(name string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(name) {
@@ -45,7 +47,11 @@ func PkgName(name string) string {
 			b.WriteRune(r)
 		}
 	}
-	return b.String()
+	name = b.String()
+	if !token.IsIdentifier(name) || name == "_" {
+		return ""
+	}
+	return name
 }
 
 // RepoSlug extracts owner/repo from a github.com module path; returns an empty string for non-GitHub modules.
@@ -171,15 +177,23 @@ func GenerateWithProgress(t *template.Template, p Params, onProgress func(Progre
 	step = StepWrite
 	emit(Running, "Writing project files", nil)
 	writeWarningStart := len(warnings)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = root.Close() }()
 	for _, f := range files {
-		dest := filepath.Join(dir, filepath.FromSlash(f.Path))
-		if _, err := os.Stat(dest); err == nil {
+		dest := filepath.FromSlash(f.Path)
+		if _, err := root.Stat(dest); err == nil {
 			warnings = append(warnings, fmt.Sprintf("overwrote existing file %s", f.Path))
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		if err := root.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(dest, f.Data, f.Mode); err != nil {
+		if err := root.WriteFile(dest, f.Data, f.Mode); err != nil {
 			return nil, err
 		}
 	}
@@ -189,7 +203,7 @@ func GenerateWithProgress(t *template.Template, p Params, onProgress func(Progre
 		if err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(filepath.Join(dir, "LICENSE"), []byte(text), 0o644); err != nil {
+		if err := root.WriteFile("LICENSE", []byte(text), 0o644); err != nil {
 			return nil, err
 		}
 		files = append(files, template.RenderedFile{Path: "LICENSE"})

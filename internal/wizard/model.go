@@ -209,6 +209,7 @@ func (m *model) syncTail() {
 		return
 	}
 	m.tmpl = tmpl
+	m.p.Options = raw
 	m.options = current
 	tail := append(optionSteps(tmpl, m.p, current), confirmStep(tmpl, m.p, current, &m.confirmed))
 	m.steps = append(m.steps[:m.headLen], tail...)

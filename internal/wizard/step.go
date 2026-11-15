@@ -2,7 +2,6 @@ package wizard
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -276,16 +275,12 @@ func optionField(o template.Option, p *generate.Params, current any) *Field {
 	case template.OptionString:
 		v, _ := current.(string)
 		w := newTextWidget(v, "", func(s string) { p.Options[o.Key] = s })
-		var re *regexp.Regexp
-		if o.Pattern != "" {
-			re = regexp.MustCompile(o.Pattern) // validated at template load
-		}
 		f.kind = kindInput
 		f.widget = w
 		f.commit = func() { p.Options[o.Key] = w.value() }
 		f.validate = func() string {
-			if s := w.value(); s != "" && re != nil && !re.MatchString(s) {
-				return fmt.Sprintf("must match %s", o.Pattern)
+			if err := o.ValidateString(w.value()); err != nil {
+				return err.Error()
 			}
 			return ""
 		}

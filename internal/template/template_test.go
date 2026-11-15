@@ -1,10 +1,57 @@
 package template
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
+
+func TestRenderRejectsUnsafeDestinations(t *testing.T) {
+	for _, dest := range []string{"", "../outside.txt", "safe/../../outside.txt", `safe\..\..\outside.txt`, `safe/..\../outside.txt`, "/absolute", `\absolute`, `C:\absolute`, "C:relative", `\\server\share\file`, "file:stream", "dir/..", ".", "dir//file", "dir/./file", "dir/", "file\x00.txt"} {
+		t.Run(dest, func(t *testing.T) {
+			// Exercise validation after substitution, not just literal YAML paths.
+			tmpl, err := parse("test", newTestFS("files: [{src: file, dest: '{{ .Name }}'}]", map[string]string{"file": "data"}), "builtin")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := tmpl.Render(&Context{Name: dest}); err == nil {
+				t.Fatalf("unsafe destination %q accepted", dest)
+			}
+		})
+	}
+	for _, dest := range []string{"main.go", ".github/workflows/test.yml", "dir/file..txt"} {
+		if err := validateDest(dest); err != nil {
+			t.Errorf("valid destination %q: %v", dest, err)
+		}
+	}
+}
+
+func TestStringPatternValidation(t *testing.T) {
+	for _, def := range []string{"abc", "", "123-invalid"} {
+		y := fmt.Sprintf("options: [{key: ident, type: string, prompt: Identifier, pattern: '^[a-z]+$', default: %q}]", def)
+		tmpl, err := parse("test", newTestFS(y, nil), "builtin")
+		if def == "123-invalid" {
+			if err == nil || !strings.Contains(err.Error(), "invalid default") {
+				t.Fatalf("invalid default error = %v", err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, value := range []string{"valid", "", "123-invalid"} {
+			got, err := tmpl.CoerceOptions(map[string]any{"ident": value})
+			if value == "123-invalid" {
+				if err == nil || !strings.Contains(err.Error(), "ident") {
+					t.Fatalf("invalid input error = %v", err)
+				}
+			} else if err != nil || got["ident"] != value {
+				t.Fatalf("value %q: got %v, error %v", value, got, err)
+			}
+		}
+	}
+}
 
 func newTestFS(yaml string, files map[string]string) fstest.MapFS {
 	fsys := fstest.MapFS{

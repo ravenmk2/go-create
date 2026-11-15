@@ -391,6 +391,15 @@ func TestPlatformReplace(t *testing.T) {
 	if string(got) != "new" {
 		t.Fatalf("target content = %q, want new", got)
 	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(target)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o755 {
+			t.Fatalf("replacement permissions = %o, want 755", got)
+		}
+	}
 	if runtime.GOOS == "windows" {
 		if backup != target+".old" {
 			t.Fatalf("backup = %q, want %q", backup, target+".old")

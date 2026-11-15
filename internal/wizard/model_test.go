@@ -6,7 +6,67 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/ravenmk2/go-create/internal/generate"
+	"github.com/ravenmk2/go-create/internal/template"
 )
+
+func TestSwitchTemplateDropsOldOptions(t *testing.T) {
+	cli, err := template.Load("cli")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lib, err := template.Load("lib")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := &generate.Params{Name: "demo", Module: "github.com/user/demo", License: "none", Dir: t.TempDir(), NoGit: true, NoTidy: true}
+	m := newModel([]*template.Template{cli, lib}, p)
+	// Select CLI and commit its option fields, then navigate back to change template.
+	send(m, key("enter"))
+	for i := 0; i < 100 && m.curStep().title != "Confirm" && m.err == nil; i++ {
+		send(m, key("enter"))
+	}
+	if m.err != nil {
+		t.Fatal(m.err)
+	}
+	if m.curStep().title != "Confirm" {
+		t.Fatal("CLI wizard did not reach confirmation")
+	}
+	if _, ok := p.Options["cli_framework"]; !ok {
+		t.Fatal("CLI option was not committed")
+	}
+	p.Options["description"] = "Keep this shared value"
+	for i := 0; i < 100 && m.stepIdx > 0; i++ {
+		send(m, key("shift+tab"))
+	}
+	if m.stepIdx != 0 {
+		t.Fatal("wizard did not return to template selection")
+	}
+	send(m, key("down"), key("enter"))
+	if m.err != nil {
+		t.Fatal(m.err)
+	}
+	if m.tmpl.Name != "lib" {
+		t.Fatalf("template = %s", m.tmpl.Name)
+	}
+	if _, ok := p.Options["cli_framework"]; ok {
+		t.Fatal("old template option survived")
+	}
+	if p.Options["description"] != "Keep this shared value" {
+		t.Fatal("shared option was lost")
+	}
+	for i := 0; i < 100 && !m.done && m.err == nil; i++ {
+		send(m, key("enter"))
+	}
+	if m.err != nil {
+		t.Fatal(m.err)
+	}
+	if !m.done || !m.confirmed {
+		t.Fatal("library wizard did not finish")
+	}
+	if _, err := generate.Generate(m.tmpl, *p); err != nil {
+		t.Fatalf("generation after template switch: %v", err)
+	}
+}
 
 // key builds a key message from its bubbletea string form.
 func key(s string) tea.KeyMsg {

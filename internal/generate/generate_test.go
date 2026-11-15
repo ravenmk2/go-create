@@ -2,6 +2,8 @@ package generate
 
 import (
 	"fmt"
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +12,68 @@ import (
 
 	"github.com/ravenmk2/go-create/internal/template"
 )
+
+func TestGeneratePackageNames(t *testing.T) {
+	tmpl := loadBuiltin(t, "lib")
+	for _, name := range []string{"123app", "type", "func", "my-app", "My.Lib", "my_lib"} {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "project")
+			_, err := Generate(tmpl, Params{Name: name, Module: "github.com/user/demo", Dir: dir, NoGit: true, NoTidy: true})
+			if name == "123app" || name == "type" || name == "func" {
+				if err == nil || !strings.Contains(err.Error(), "package name") {
+					t.Fatalf("invalid package name error = %v", err)
+				}
+				if _, err := os.Stat(dir); !os.IsNotExist(err) {
+					t.Fatalf("invalid input created output directory: %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			f, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, name+".go"), nil, parser.AllErrors)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if f.Name.Name != PkgName(name) {
+				t.Fatalf("package = %s, want %s", f.Name.Name, PkgName(name))
+			}
+		})
+	}
+}
+
+func TestGenerateRejectsEscapingSymlinks(t *testing.T) {
+	tmpl := loadBuiltin(t, "lib")
+	for _, name := range []string{"README.md", "LICENSE", ".github"} {
+		t.Run(name, func(t *testing.T) {
+			dir, outside := t.TempDir(), t.TempDir()
+			target := filepath.Join(outside, "sentinel")
+			if name == ".github" {
+				target = outside
+			} else if err := os.WriteFile(target, []byte("untouched"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, filepath.Join(dir, name)); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			_, err := Generate(tmpl, Params{Name: "demo", Module: "github.com/user/demo", Dir: dir, License: "mit", Holder: "Tester", NoGit: true, NoTidy: true})
+			if err == nil {
+				t.Fatal("generation followed an escaping symlink")
+			}
+			if name == ".github" {
+				entries, err := os.ReadDir(outside)
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("external directory changed: %v, %v", entries, err)
+				}
+			} else {
+				data, err := os.ReadFile(target)
+				if err != nil || string(data) != "untouched" {
+					t.Fatalf("external file changed: %q, %v", data, err)
+				}
+			}
+		})
+	}
+}
 
 func loadBuiltin(t *testing.T, name string) *template.Template {
 	t.Helper()

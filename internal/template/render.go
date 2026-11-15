@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"strings"
 	texttemplate "text/template"
 )
@@ -132,12 +133,14 @@ func renderDest(dest string, ctx *Context) (string, error) {
 	return buf.String(), nil
 }
 
-// validateDest validates the rendered destination path: relative, no .., non-empty.
+// validateDest requires a slash-separated local file path on every platform.
 func validateDest(dest string) error {
 	if dest == "" {
 		return fmt.Errorf("dest is empty after rendering")
 	}
-	if path.IsAbs(dest) || strings.HasPrefix(dest, "..") || strings.Contains(dest, "/../") {
+	// Reject Windows separators, volume names and streams even on Unix, so
+	// a template cannot become unsafe when used on a different platform.
+	if dest == "." || !fs.ValidPath(dest) || strings.ContainsAny(dest, "\\:\x00") || !filepath.IsLocal(dest) {
 		return fmt.Errorf("dest %q must be a relative path inside the project", dest)
 	}
 	return nil
